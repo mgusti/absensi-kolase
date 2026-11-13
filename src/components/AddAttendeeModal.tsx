@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { X, CheckCircle2, User, Building } from 'lucide-react';
 import { AttendanceRecord, AttendanceSession, DuplicatePolicy } from '../types/attendance.ts';
 import { validateNip, resolveAttendanceSubmission, generateAvatarDataUrl } from '../utils/collageLogic.ts';
+import { readImageFileAsDataUrl } from '../utils/heicConverter.ts';
 
 interface AddAttendeeModalProps {
   isOpen: boolean;
@@ -38,16 +39,17 @@ export const AddAttendeeModal: React.FC<AddAttendeeModalProps> = ({
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handlePhotoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setUploadedPhotoUrl(event.target.result as string);
+    try {
+      const dataUrl = await readImageFileAsDataUrl(file);
+      if (dataUrl) {
+        setUploadedPhotoUrl(dataUrl);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Gagal membaca file foto:', err);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -202,7 +204,7 @@ export const AddAttendeeModal: React.FC<AddAttendeeModalProps> = ({
               <div className="flex-1 space-y-1.5">
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.heic,.heif"
                   onChange={handlePhotoFileUpload}
                   className="block w-full text-xs text-stone-600 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-stone-200 file:text-stone-800 hover:file:bg-stone-300 cursor-pointer"
                 />

@@ -17,13 +17,20 @@ import { SyncSheetModal } from './components/SyncSheetModal.tsx';
 import { GoogleWorkspacePanel } from './components/GoogleWorkspacePanel.tsx';
 import { downloadAllPagesAsPdf } from './utils/collageRenderer.ts';
 import { filterAttendees } from './utils/collageLogic.ts';
-import { saveAttendanceToFirestore, subscribeAttendance } from './services/firebase.ts';
+import {
+  saveAttendanceToFirestore,
+  subscribeAttendance,
+  deleteAttendanceFromFirestore,
+  clearAllAttendanceFromFirestore
+} from './services/firebase.ts';
 
-const STORAGE_KEY_ATTENDEES = 'autoabsen_attendees_v2';
-const STORAGE_KEY_SETTINGS = 'autoabsen_settings_v2';
+const STORAGE_KEY_ATTENDEES = 'absensi_kolase_attendees_v4';
+const STORAGE_KEY_SETTINGS = 'absensi_kolase_settings_v4';
+const STORAGE_KEY_FORM_URL = 'absensi_kolase_form_url_v4';
+const STORAGE_KEY_SHEET_ID = 'absensi_kolase_sheet_id_v4';
+const STORAGE_KEY_BOOT_ID = 'absensi_kolase_server_boot_id';
 
-export const USER_GOOGLE_FORM_URL =
-  'https://docs.google.com/forms/d/e/1FAIpQLScYbiBkznkdZq8j2EE2qEwD_gKzMwwX4aVcfb8ADDTslgHikA/viewform';
+declare const __SERVER_BOOT_ID__: string;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'form' | 'table' | 'script'>('studio');
@@ -31,38 +38,69 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
-  // Attendees list
+  // Tautan Google Form & Spreadsheet milik user baru (tersimpan di localStorage)
+  const [formUrl, setFormUrl] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEY_FORM_URL) || '';
+  });
+
+  const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEY_SHEET_ID) || '';
+  });
+
+  // Setiap kali `npm run dev` dijalankan ulang, otomatis kosongkan semua data Rekap Sheets
   const [attendees, setAttendees] = useState<AttendanceRecord[]>(() => {
     try {
+      const currentBootId = typeof __SERVER_BOOT_ID__ !== 'undefined' ? __SERVER_BOOT_ID__ : '';
+      const lastBootId = localStorage.getItem(STORAGE_KEY_BOOT_ID);
+
+      if (currentBootId && lastBootId !== currentBootId) {
+        localStorage.removeItem(STORAGE_KEY_ATTENDEES);
+        localStorage.removeItem('autoabsen_attendees_v2');
+        localStorage.setItem(STORAGE_KEY_BOOT_ID, currentBootId);
+        return [];
+      }
+
       const stored = localStorage.getItem(STORAGE_KEY_ATTENDEES);
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // ignore
     }
-    return SAMPLE_ATTENDEES;
+    return [];
   });
 
   // Collage settings
   const [settings, setSettings] = useState<CollageSettings>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.unitName?.includes('PERJANJIAN KERJA')) {
+          parsed.unitName = 'REKAPITULASI DOKUMENTASI KEHADIRAN';
+        }
+        if (parsed.institutionName?.includes('P3K')) {
+          parsed.institutionName = 'DOKUMENTASI ABSENSI KEHADIRAN';
+        }
+        if (parsed.footerNote?.includes('P3K')) {
+          parsed.footerNote = 'Dokumentasi Resmi Kehadiran';
+        }
+        return parsed;
+      }
     } catch {
       // ignore
     }
     return {
       template: 'beige',
       orientation: 'portrait',
-      institutionName: 'DOKUMENTASI ABSENSI P3K',
-      unitName: 'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA',
+      institutionName: 'DOKUMENTASI ABSENSI KEHADIRAN',
+      unitName: 'REKAPITULASI DOKUMENTASI KEHADIRAN',
       logoType: 'garuda',
-      footerNote: 'Dokumentasi Resmi Kehadiran P3K',
+      footerNote: 'Dokumentasi Resmi Kehadiran',
       showTimestamp: true,
-      duplicatePolicy: 'reject',
-      selectedDate: '2026-10-26',
+      duplicatePolicy: 'overwrite',
+      selectedDate: new Date().toISOString().slice(0, 10),
       selectedSession: 'Pagi'
     };
   });
@@ -75,6 +113,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_FORM_URL, formUrl);
+  }, [formUrl]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SHEET_ID, spreadsheetId);
+  }, [spreadsheetId]);
 
   // Optional Firestore real-time listener
   useEffect(() => {
@@ -104,20 +150,54 @@ export default function App() {
   };
 
   const handleImportRecords = (newRecords: AttendanceRecord[]) => {
-    setAttendees((prev) => {
-      const existingNips = new Set(prev.map((r) => `${r.nip}-${r.date}-${r.session}`));
-      const fresh = newRecords.filter((r) => !existingNips.has(`${r.nip}-${r.date}-${r.session}`));
-      fresh.forEach((r) => saveAttendanceToFirestore(r));
-      return [...fresh, ...prev];
-    });
+    // Terapkan aturan duplikat (Default: TIMPA / overwrite dengan data baris terbaru)
+    const processed: AttendanceRecord[] = [];
+    const indexByKey = new Map<string, number>();
+
+    for (const rec of newRecords) {
+      const key = `${rec.nip}-${rec.date}-${rec.session}`;
+      const existingIdx = indexByKey.get(key);
+
+      if (existingIdx === undefined) {
+        indexByKey.set(key, processed.length);
+        processed.push(rec);
+      } else if (settings.duplicatePolicy === 'overwrite') {
+        processed[existingIdx] = { ...rec, status: 'overwritten' };
+      } else if (settings.duplicatePolicy === 'flag') {
+        processed.push({ ...rec, status: 'duplicate_flagged' });
+      }
+      // Jika 'reject', abaikan duplikat berikutnya
+    }
+
+    // Ganti data Rekap Sheets secara penuh dengan hasil tarikan terbaru dari Google Sheet agar selalu 100% konsisten
+    setAttendees(processed);
+    processed.forEach((r) => saveAttendanceToFirestore(r));
+
+    // Sesuaikan otomatis filter Tanggal & Sesi di Studio Kolase dengan data yang baru ditarik
+    if (processed.length > 0) {
+      setSettings((prev) => {
+        const hasMatchCurrent = processed.some(
+          (r) => r.date === prev.selectedDate && r.session === prev.selectedSession
+        );
+        if (hasMatchCurrent) return prev;
+        const latest = processed[processed.length - 1];
+        return {
+          ...prev,
+          selectedDate: latest.date,
+          selectedSession: latest.session
+        };
+      });
+    }
   };
 
   const handleDeleteAttendee = (id: string) => {
     setAttendees((prev) => prev.filter((a) => a.id !== id));
+    deleteAttendanceFromFirestore(id);
   };
 
   const handleClearAll = () => {
     if (window.confirm('Yakin ingin mengosongkan semua data presensi?')) {
+      clearAllAttendanceFromFirestore(attendees);
       setAttendees([]);
     }
   };
@@ -161,7 +241,10 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
             <GoogleWorkspacePanel
               onSyncRows={handleImportRecords}
-              formUrl={USER_GOOGLE_FORM_URL}
+              formUrl={formUrl}
+              onUpdateFormUrl={setFormUrl}
+              spreadsheetId={spreadsheetId}
+              onUpdateSpreadsheetId={setSpreadsheetId}
               onOpenShareModal={() => setIsShareModalOpen(true)}
               attendees={attendees}
               settings={settings}
@@ -222,7 +305,8 @@ export default function App() {
       <GoogleFormShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
-        formUrl={USER_GOOGLE_FORM_URL}
+        formUrl={formUrl}
+        onUpdateFormUrl={setFormUrl}
       />
 
       {/* Google Sheets Sync & Import Modal */}
@@ -236,14 +320,14 @@ export default function App() {
       <footer className="border-t border-stone-200 bg-white py-6 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
           <div>
-            <strong>AutoAbsen Kolase P3K</strong> — Terhubung dengan Google Forms, Google Sheets, Google Drive & Firebase Firestore.
+            <strong>Absensi Kolase</strong> — Terhubung dengan Google Forms & Google Sheets.
           </div>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsShareModalOpen(true)}
               className="text-stone-700 hover:text-stone-900 font-semibold transition-colors flex items-center gap-1"
             >
-              <span>📱 Bagikan Google Form P3K</span>
+              <span>📱 Bagikan Google Form</span>
             </button>
             <span aria-hidden="true">·</span>
             <button

@@ -14,9 +14,7 @@ interface SyncSheetModalProps {
   onImportRecords: (newRecords: AttendanceRecord[]) => void;
 }
 
-const DEFAULT_USER_CSV = `Timestamp, NIP,Nama Lengkap & Gelar,Unggah Foto Diri / Bukti Kehadiran,Sesi Absensi
-10/26/2026 14:43:03,1123123,aaaaaaaaaa,https://drive.google.com/open?id=1a3XjL1j4GiPFVDxHyuhOYFvlOnUhPH90,Pagi
-10/26/2026 16:00:49,1412414,gusti,https://drive.google.com/open?id=1qkEdHTDBtQxta0hiqI9MujdCorG_Lf4E,Pagi`;
+const DEFAULT_CSV_TEMPLATE = `Timestamp,NIP,Nama Lengkap & Gelar,Sesi Absensi,Unggah Foto Diri / Bukti Kehadiran`;
 
 export const SyncSheetModal: React.FC<SyncSheetModalProps> = ({
   isOpen,
@@ -25,7 +23,7 @@ export const SyncSheetModal: React.FC<SyncSheetModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const [csvText, setCsvText] = useState(DEFAULT_USER_CSV);
+  const [csvText, setCsvText] = useState(DEFAULT_CSV_TEMPLATE);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const handleApplyImport = () => {
@@ -64,7 +62,7 @@ export const SyncSheetModal: React.FC<SyncSheetModalProps> = ({
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             <h2 className="text-base font-bold text-stone-900">
-              Sinkronisasi Data Google Sheets 'Absensi_P3k'
+              Sinkronisasi Data Google Sheets
             </h2>
           </div>
           <button
@@ -77,7 +75,7 @@ export const SyncSheetModal: React.FC<SyncSheetModalProps> = ({
 
         <div className="mt-4 space-y-4">
           <p className="text-xs text-stone-600">
-            Salin baris respons dari Google Sheets Anda (termasuk baris header <code>Timestamp, NIP, Nama, Foto, Sesi</code>) dan tempel di bawah ini untuk langsung memperbarui lembar kolase.
+            Salin baris respons dari Google Sheets Anda (termasuk baris header <code>Timestamp, NIP, Nama, Sesi, Foto</code>) dan tempel di bawah ini untuk langsung memperbarui lembar kolase.
           </p>
 
           <div>
@@ -115,11 +113,11 @@ export const SyncSheetModal: React.FC<SyncSheetModalProps> = ({
           <div className="pt-3 border-t border-stone-100 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => setCsvText(DEFAULT_USER_CSV)}
+              onClick={() => setCsvText(DEFAULT_CSV_TEMPLATE)}
               className="text-xs text-stone-500 hover:text-stone-800 flex items-center gap-1"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>Isi Data P3K Terbaru</span>
+              <span>Reset Format Header CSV</span>
             </button>
             <div className="flex items-center gap-2">
               <button

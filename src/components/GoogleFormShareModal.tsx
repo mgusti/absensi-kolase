@@ -11,12 +11,14 @@ interface GoogleFormShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   formUrl: string;
+  onUpdateFormUrl: (url: string) => void;
 }
 
 export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
   isOpen,
   onClose,
-  formUrl
+  formUrl,
+  onUpdateFormUrl
 }) => {
   if (!isOpen) return null;
 
@@ -25,7 +27,11 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
   const [viewMode, setViewMode] = useState<'qr' | 'embed'>('qr');
 
   useEffect(() => {
-    QRCode.toDataURL(formUrl, {
+    if (!formUrl.trim()) {
+      setQrDataUrl('');
+      return;
+    }
+    QRCode.toDataURL(formUrl.trim(), {
       width: 320,
       margin: 2,
       color: {
@@ -56,8 +62,8 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
-      `*PRESENSI HARIAN PEGAWAI (ABSENSI P3K)*\n\n` +
-      `Bapak/Ibu rekan P3K, silakan mengisi formulir kehadiran dan mengunggah foto selfie dokumentasi melalui tautan berikut:\n` +
+      `*PRESENSI HARIAN PEGAWAI (ABSENSI KOLASE)*\n\n` +
+      `Bapak/Ibu rekan pegawai, silakan mengisi formulir kehadiran dan mengunggah foto selfie dokumentasi melalui tautan berikut:\n` +
       `${formUrl}\n\n` +
       `Pastikan mengisi NIP, Nama, dan Sesi yang sesuai. Foto akan otomatis disusun menjadi lembar kolase dokumentasi kehadiran.`
     );
@@ -67,7 +73,7 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
   const handleDownloadQr = () => {
     if (!qrDataUrl) return;
     const link = document.createElement('a');
-    link.download = 'QR_Code_Absensi_P3K.png';
+    link.download = 'QR_Code_Absensi_Kolase.png';
     link.href = qrDataUrl;
     link.click();
   };
@@ -79,7 +85,7 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak QR Code Absensi P3K</title>
+          <title>Cetak QR Code Absensi Kolase</title>
           <style>
             body { font-family: sans-serif; text-align: center; padding: 40px; }
             .card { border: 2px solid #292524; border-radius: 16px; padding: 30px; max-width: 480px; margin: 0 auto; }
@@ -92,10 +98,10 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
         <body>
           <div class="card">
             <h1>SCAN UNTUK PRESENSI</h1>
-            <p>Dokumentasi Kehadiran Pegawai P3K</p>
+            <p>Dokumentasi Kehadiran Pegawai</p>
             <img src="${qrDataUrl}" alt="QR Code" />
             <p>Arahkan kamera HP Anda ke QR code di atas untuk membuka formulir absensi.</p>
-            <div class="footer">Sistem AutoAbsen Kolase Otomatis</div>
+            <div class="footer">Sistem Absensi Kolase Otomatis</div>
           </div>
           <script>
             window.onload = function() { window.print(); }
@@ -160,27 +166,31 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
               </label>
               <div className="flex items-center gap-2">
                 <input
-                  type="text"
-                  readOnly
+                  type="url"
+                  placeholder="Masukkan URL Google Form baru Anda (https://docs.google.com/forms/...)"
                   value={formUrl}
-                  className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono text-stone-700 select-all"
+                  onChange={(e) => onUpdateFormUrl(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
                 <button
                   onClick={handleCopyLink}
-                  className="px-3 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+                  disabled={!formUrl.trim()}
+                  className="px-3 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors disabled:opacity-50"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied ? 'Tersalin' : 'Salin'}</span>
                 </button>
-                <a
-                  href={formUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="p-2 border border-stone-200 hover:bg-stone-50 rounded-lg text-stone-700 transition-colors"
-                  title="Buka di tab baru"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
+                {formUrl.trim() && (
+                  <a
+                    href={formUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-2 border border-stone-200 hover:bg-stone-50 rounded-lg text-stone-700 transition-colors"
+                    title="Buka di tab baru"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
               </div>
             </div>
 
@@ -190,8 +200,8 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
                 {qrDataUrl ? (
                   <img src={qrDataUrl} alt="QR Code Presensi" className="w-36 h-36" />
                 ) : (
-                  <div className="w-36 h-36 bg-stone-100 flex items-center justify-center text-xs text-stone-400">
-                    Membuat QR...
+                  <div className="w-36 h-36 bg-stone-100 flex items-center justify-center text-center p-2 text-xs text-stone-400">
+                    Masukkan URL Google Form untuk membuat QR Code
                   </div>
                 )}
               </div>

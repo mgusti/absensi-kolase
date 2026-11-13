@@ -405,7 +405,7 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-stone-600 mt-0.5 leading-relaxed">
-                  Sesuai format absensi P3K, setiap halaman memuat maksimal 6 foto peserta (grid 3×2). Semua {totalPages} halaman kolase disatukan menjadi <strong>1 file PDF utuh</strong> saat diekspor.
+                  Setiap halaman memuat maksimal 6 foto peserta (grid 3×2). Semua {totalPages} halaman kolase disatukan menjadi <strong>1 file PDF utuh</strong> saat diekspor.
                 </p>
               </div>
             </div>
@@ -579,9 +579,9 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
               onChange={(e) => onUpdateSettings({ duplicatePolicy: e.target.value as any })}
               className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
             >
+              <option value="overwrite">Timpa dengan Absensi Terbaru (Default)</option>
               <option value="reject">Tolak Duplikasi (Hanya absensi pertama yang sah)</option>
               <option value="flag">Simpan & Tandai Duplikat (Untuk verifikasi admin)</option>
-              <option value="overwrite">Timpa dengan Absensi Terbaru</option>
             </select>
           </div>
 

@@ -90,7 +90,7 @@ export const GasSetupModal: React.FC = () => {
               <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
               <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
               <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
-              <span className="text-xs font-mono text-stone-400 ml-2">AutoAbsenKolase.gs</span>
+              <span className="text-xs font-mono text-stone-400 ml-2">AbsensiKolase.gs</span>
             </div>
             <button
               onClick={handleCopyCode}

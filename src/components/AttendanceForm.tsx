@@ -8,6 +8,7 @@ import { Camera, Upload, CheckCircle2, AlertTriangle, RefreshCw, Sparkles, User,
 import confetti from 'canvas-confetti';
 import { AttendanceRecord, AttendanceSession, DuplicatePolicy } from '../types/attendance.ts';
 import { validateNip, resolveAttendanceSubmission, generateAvatarDataUrl } from '../utils/collageLogic.ts';
+import { readImageFileAsDataUrl } from '../utils/heicConverter.ts';
 
 interface AttendanceFormProps {
   attendees: AttendanceRecord[];
@@ -102,16 +103,17 @@ export const AttendanceForm: React.FC<AttendanceFormProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setCustomPhotoUrl(event.target.result as string);
+    try {
+      const dataUrl = await readImageFileAsDataUrl(file);
+      if (dataUrl) {
+        setCustomPhotoUrl(dataUrl);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Gagal membaca file gambar:', err);
+    }
   };
 
   const handlePresetSelect = (idx: number) => {
@@ -446,7 +448,7 @@ export const AttendanceForm: React.FC<AttendanceFormProps> = ({
                     Ganti Foto Lain
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,.heic,.heif"
                       onChange={handleFileUpload}
                       className="hidden"
                     />
@@ -459,11 +461,11 @@ export const AttendanceForm: React.FC<AttendanceFormProps> = ({
                     Klik untuk memilih foto dari perangkat
                   </span>
                   <span className="text-[11px] text-stone-500 mt-1 block">
-                    Format JPG, PNG, atau WebP (Maks. 10MB)
+                    Format JPG, PNG, WebP, atau HEIC (Maks. 10MB)
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

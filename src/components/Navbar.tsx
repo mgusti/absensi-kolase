@@ -37,7 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 hover:text-amber-900 transition-colors"
           >
-            AutoAbsen Kolase
+            Absensi Kolase
           </a>
         </div>
 

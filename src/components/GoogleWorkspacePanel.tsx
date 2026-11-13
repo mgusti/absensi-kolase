@@ -3,35 +3,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   FileSpreadsheet,
-  HardDrive,
   ExternalLink,
   QrCode,
-  Share2,
   RefreshCw,
-  UploadCloud,
   CheckCircle2,
   AlertCircle,
-  LogOut,
-  FolderOpen
+  FileText,
+  Sparkles
 } from 'lucide-react';
-import { User } from 'firebase/auth';
-import {
-  googleSignIn,
-  logout,
-  initAuth,
-  fetchLiveGoogleSheetRows,
-  uploadCollageToDrive
-} from '../services/firebase.ts';
+import { fetchLiveGoogleSheetRows } from '../services/firebase.ts';
 import { AttendanceRecord, CollageSettings } from '../types/attendance.ts';
-import { getDriveDirectImageUrl, filterAttendees } from '../utils/collageLogic.ts';
-import { generateCollagePdfBlob } from '../utils/collageRenderer.ts';
+import {
+  getDriveDirectImageUrl,
+  filterAttendees,
+  detectSheetDayFirst,
+  parseFlexibleTimestamp
+} from '../utils/collageLogic.ts';
+import { downloadAllPagesAsPdf, clearImageCache } from '../utils/collageRenderer.ts';
 
 interface GoogleWorkspacePanelProps {
   onSyncRows: (records: AttendanceRecord[]) => void;
   formUrl: string;
+  onUpdateFormUrl: (url: string) => void;
+  spreadsheetId: string;
+  onUpdateSpreadsheetId: (id: string) => void;
   onOpenShareModal: () => void;
   attendees?: AttendanceRecord[];
   settings?: CollageSettings;
@@ -40,59 +38,22 @@ interface GoogleWorkspacePanelProps {
 export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
   onSyncRows,
   formUrl,
+  onUpdateFormUrl,
+  spreadsheetId,
+  onUpdateSpreadsheetId,
   onOpenShareModal,
   attendees,
   settings
 }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [spreadsheetId, setSpreadsheetId] = useState('');
   const [isFetchingSheet, setIsFetchingSheet] = useState(false);
-  const [isUploadingDrive, setIsUploadingDrive] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (user) => setCurrentUser(user),
-      () => setCurrentUser(null)
-    );
-    return () => unsubscribe();
-  }, []);
-
-  const handleSignIn = async () => {
-    setIsLoggingIn(true);
-    setActionMessage(null);
-    try {
-      const res = await googleSignIn();
-      if (res) {
-        setCurrentUser(res.user);
-        setActionMessage({
-          type: 'success',
-          text: `Berhasil login sebagai ${res.user.displayName || res.user.email}. Izin Google Sheets & Drive aktif!`
-        });
-      }
-    } catch (err: any) {
-      console.error(err);
-      setActionMessage({
-        type: 'error',
-        text: 'Login Google dibatalkan atau terjadi kendala otorisasi: ' + (err.message || '')
-      });
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    setCurrentUser(null);
-    setActionMessage({ type: 'success', text: 'Berhasil keluar dari akun Google.' });
-  };
 
   const handleFetchSheet = async () => {
     if (!spreadsheetId.trim()) {
       setActionMessage({
         type: 'error',
-        text: 'Masukkan Spreadsheet ID atau URL Google Sheets terlebih dahulu.'
+        text: 'Masukkan URL atau ID Google Sheets terlebih dahulu.'
       });
       return;
     }
@@ -115,56 +76,50 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
         return;
       }
 
-      // Parse rows
+      // Parse rows (Kolom A: Timestamp, B: NIP, C: Nama, D: Sesi, E: Foto)
       const headers = rows[0].map((h) => String(h).toLowerCase());
       let timestampIdx = headers.findIndex((h) => h.includes('timestamp') || h.includes('waktu'));
       let nipIdx = headers.findIndex((h) => h.includes('nip'));
       let nameIdx = headers.findIndex((h) => h.includes('nama'));
-      let photoIdx = headers.findIndex((h) => h.includes('foto') || h.includes('bukti') || h.includes('unggah'));
       let sessionIdx = headers.findIndex((h) => h.includes('sesi'));
+      let photoIdx = headers.findIndex((h) => h.includes('foto') || h.includes('bukti') || h.includes('unggah'));
 
       if (timestampIdx === -1) timestampIdx = 0;
       if (nipIdx === -1) nipIdx = 1;
       if (nameIdx === -1) nameIdx = 2;
-      if (photoIdx === -1) photoIdx = 3;
-      if (sessionIdx === -1) sessionIdx = 4;
+      if (sessionIdx === -1) sessionIdx = 3; // Kolom D
+      if (photoIdx === -1) photoIdx = 4;   // Kolom E
+
+      const dataRows = rows.slice(1);
+      const isDayFirst = detectSheetDayFirst(dataRows.map((r) => r[timestampIdx] || ''));
 
       const parsed: AttendanceRecord[] = [];
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
         const rawTime = row[timestampIdx] || '';
         const rawNip = row[nipIdx] || '';
         const rawName = row[nameIdx] || '';
-        const rawPhoto = row[photoIdx] || '';
         const rawSession = row[sessionIdx] || 'Pagi';
+        const rawPhoto = row[photoIdx] || '';
 
         if (!rawNip && !rawName) continue;
 
-        let dateStr = '2026-10-26';
-        if (rawTime) {
-          const parts = String(rawTime).split(' ')[0].split(/[\/\-]/);
-          if (parts.length === 3) {
-            if (parts[2].length === 4) {
-              dateStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-            } else if (parts[0].length === 4) {
-              dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-            }
-          }
-        }
+        const { dateStr, isoTimestamp } = parseFlexibleTimestamp(rawTime, isDayFirst);
 
         parsed.push({
-          id: `sheet-live-${i}-${Date.now()}`,
-          timestamp: rawTime ? new Date(rawTime).toISOString() : new Date().toISOString(),
+          id: `sheet-live-${i + 1}-${Date.now()}`,
+          timestamp: isoTimestamp,
           nip: String(rawNip).replace(/\D/g, '') || String(rawNip),
           name: String(rawName),
           session: String(rawSession).toLowerCase().includes('sore') ? 'Sore' : 'Pagi',
           date: dateStr,
           photoUrl: rawPhoto.includes('drive.google.com') ? getDriveDirectImageUrl(rawPhoto) : rawPhoto,
           status: 'valid',
-          department: 'Absensi P3K'
+          department: 'Peserta'
         });
       }
 
+      clearImageCache();
       onSyncRows(parsed);
       setActionMessage({
         type: 'success',
@@ -181,39 +136,24 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
     }
   };
 
-  const handleUploadToDrive = async () => {
-    setIsUploadingDrive(true);
+  const handleDownloadPdf = async () => {
+    if (!attendees || !settings) return;
+    setIsDownloadingPdf(true);
     setActionMessage(null);
-
     try {
-      if (attendees && settings) {
-        const active = filterAttendees(attendees, settings.selectedDate, settings.selectedSession);
-        const { blob, filename, pageCount } = await generateCollagePdfBlob(active, settings);
-        const res = await uploadCollageToDrive(blob, filename);
-        setActionMessage({
-          type: 'success',
-          text: `✅ 1 Berkas PDF (${pageCount} Halaman) berhasil disimpan ke Google Drive Anda! (File ID: ${res.fileId})`
-        });
-      } else {
-        const canvas = document.querySelector('canvas') as HTMLCanvasElement | null;
-        if (!canvas) throw new Error('Canvas belum siap');
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-        if (!blob) throw new Error('Gagal mengonversi gambar');
-        const filename = `Dokumentasi_Kolase_P3K_${Date.now()}.png`;
-        const res = await uploadCollageToDrive(blob, filename);
-        setActionMessage({
-          type: 'success',
-          text: `Kolase berhasil disimpan ke Google Drive Anda! (File ID: ${res.fileId})`
-        });
-      }
+      const active = filterAttendees(attendees, settings.selectedDate, settings.selectedSession);
+      const res = await downloadAllPagesAsPdf(active, settings);
+      setActionMessage({
+        type: 'success',
+        text: `✅ 1 File PDF (${res.pageCount} Halaman) berhasil diunduh ke perangkat Anda!`
+      });
     } catch (err: any) {
-      console.error(err);
       setActionMessage({
         type: 'error',
-        text: 'Gagal mengunggah ke Google Drive: ' + (err.message || '')
+        text: 'Gagal membuat PDF: ' + (err.message || '')
       });
     } finally {
-      setIsUploadingDrive(false);
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -224,50 +164,16 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-stone-500 uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Konektivitas Google Workspace</span>
+            <span>Mode Direct Link · Bebas Ganti Email Google (Tanpa Login)</span>
           </div>
           <h2 className="text-base font-bold text-stone-900 mt-0.5">
-            Integrasi Google Sheets, Drive & Google Forms
+            Integrasi Langsung Google Forms & Google Sheets
           </h2>
         </div>
 
-        {/* Auth status & Official Sign in Button */}
-        <div>
-          {currentUser ? (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-xs">
-                {currentUser.photoURL && (
-                  <img
-                    src={currentUser.photoURL}
-                    alt={currentUser.displayName || ''}
-                    className="w-6 h-6 rounded-full border border-stone-200"
-                  />
-                )}
-                <span className="font-semibold text-stone-800">{currentUser.displayName || currentUser.email}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                title="Logout dari Akun Google"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleSignIn}
-              disabled={isLoggingIn}
-              className="px-3.5 py-1.5 border border-stone-300 rounded-lg text-xs font-semibold text-stone-800 hover:bg-stone-50 shadow-2xs flex items-center gap-2 transition-all disabled:opacity-50"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 48 48">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-              </svg>
-              <span>{isLoggingIn ? 'Menghubungkan...' : 'Sign in with Google'}</span>
-            </button>
-          )}
+        <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-medium">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span>Cukup tempel link Form & Sheet dari email mana saja</span>
         </div>
       </div>
 
@@ -295,12 +201,25 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
         <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-stone-900">Google Form P3K</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold">Tersinkron</span>
+              <span className="text-xs font-bold text-stone-900">1. Link Google Form</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                  formUrl.trim() ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {formUrl.trim() ? 'Aktif' : 'Tempel Link'}
+              </span>
             </div>
-            <p className="text-[11px] text-stone-600 leading-snug">
-              Bagikan formulir presensi ke peserta melalui WhatsApp atau kode QR cetak.
+            <p className="text-[11px] text-stone-600 leading-snug mb-2">
+              Tempel URL Google Form dari akun Google Anda untuk dibagikan via WA / QR Code.
             </p>
+            <input
+              type="url"
+              placeholder="https://docs.google.com/forms/..."
+              value={formUrl}
+              onChange={(e) => onUpdateFormUrl(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-mono text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-900"
+            />
           </div>
           <div className="mt-3 flex items-center gap-2">
             <button
@@ -310,15 +229,17 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
               <QrCode className="w-3.5 h-3.5" />
               <span>Bagikan & QR</span>
             </button>
-            <a
-              href={formUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="p-1.5 bg-white border border-stone-200 hover:bg-stone-100 rounded-lg text-stone-700"
-              title="Buka Google Form asli"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            {formUrl.trim() && (
+              <a
+                href={formUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="p-1.5 bg-white border border-stone-200 hover:bg-stone-100 rounded-lg text-stone-700"
+                title="Buka Google Form asli"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
           </div>
         </div>
 
@@ -326,17 +247,17 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
         <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-stone-900">Google Sheets Sync</span>
+              <span className="text-xs font-bold text-stone-900">2. Link Google Sheets</span>
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             </div>
             <p className="text-[11px] text-stone-600 leading-snug mb-2">
-              Tarik data jawaban langsung via Sheets API atau tempel Spreadsheet ID.
+              Pastikan akses Sheet & folder foto Drive diset <strong>"Siapa saja yang memiliki link"</strong>, lalu tempel URL Sheet:
             </p>
             <input
               type="text"
-              placeholder="ID / URL Google Spreadsheet..."
+              placeholder="https://docs.google.com/spreadsheets/d/..."
               value={spreadsheetId}
-              onChange={(e) => setSpreadsheetId(e.target.value)}
+              onChange={(e) => onUpdateSpreadsheetId(e.target.value)}
               className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-mono text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-900"
             />
           </div>
@@ -352,25 +273,25 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Google Drive Export */}
+        {/* Card 3: Instant Multi-Page PDF Download */}
         <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-stone-900">Google Drive Upload</span>
-              <HardDrive className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-bold text-stone-900">3. Ekspor 1 File PDF</span>
+              <FileText className="w-4 h-4 text-red-600" />
             </div>
             <p className="text-[11px] text-stone-600 leading-snug">
-              Simpan <strong>1 File PDF (Multi-Halaman)</strong> yang memuat semua halaman kolase langsung ke Google Drive Anda.
+              Unduh seluruh halaman kolase (maks. 6 foto per halaman) menjadi <strong>1 dokumen PDF utuh</strong> siap cetak atau kirim.
             </p>
           </div>
           <div className="mt-3">
             <button
-              onClick={handleUploadToDrive}
-              disabled={isUploadingDrive}
-              className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+              className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
             >
-              <UploadCloud className="w-3.5 h-3.5" />
-              <span>{isUploadingDrive ? 'Mengunggah PDF ke Drive...' : 'Simpan 1 PDF ke Drive'}</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>{isDownloadingPdf ? 'Membuat PDF...' : 'Unduh 1 File PDF Kolase'}</span>
             </button>
           </div>
         </div>

@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import { AttendanceRecord, AttendanceSession } from '../types/attendance.ts';
 import { matchPhotoFilenameToAttendee } from '../utils/collageLogic.ts';
-import { resolvedUrlCache } from '../utils/collageRenderer.ts';
+import { resolvedUrlCache, resolvePhotoUrl } from '../utils/collageRenderer.ts';
+import { readImageFileAsDataUrl } from '../utils/heicConverter.ts';
 
 interface AttendanceTableProps {
   attendees: AttendanceRecord[];
@@ -53,70 +54,54 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   const singleFileInputRef = useRef<HTMLInputElement | null>(null);
   const [activeAttendeeIdForUpload, setActiveAttendeeIdForUpload] = useState<string | null>(null);
 
-  const handleSinglePhotoSelect = (attendeeId: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
+  const handleSinglePhotoSelect = async (attendeeId: string, file: File) => {
+    try {
+      const dataUrl = await readImageFileAsDataUrl(file);
       if (dataUrl && onUpdateAttendees) {
         const updated = attendees.map((a) => (a.id === attendeeId ? { ...a, photoUrl: dataUrl } : a));
         onUpdateAttendees(updated);
         setBatchNotice(`Foto untuk peserta berhasil diperbarui.`);
         setTimeout(() => setBatchNotice(null), 3500);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Gagal memproses file foto:', err);
+    }
   };
 
-  const handleBatchPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBatchPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !onUpdateAttendees) return;
 
-    let matchedCount = 0;
     const fileList = Array.from(files);
     const updatedMap = new Map<string, string>();
+    let matchedCount = 0;
 
-    let pending = fileList.length;
-
-    fileList.forEach((file) => {
+    for (const file of fileList) {
       const matched = matchPhotoFilenameToAttendee(file.name, attendees);
       if (matched) {
         matchedCount++;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            updatedMap.set(matched.id, event.target.result as string);
+        try {
+          const dataUrl = await readImageFileAsDataUrl(file);
+          if (dataUrl) {
+            updatedMap.set(matched.id, dataUrl);
           }
-          pending--;
-          if (pending === 0 && updatedMap.size > 0) {
-            const newList = attendees.map((a) => {
-              if (updatedMap.has(a.id)) {
-                return { ...a, photoUrl: updatedMap.get(a.id)! };
-              }
-              return a;
-            });
-            onUpdateAttendees(newList);
-            setBatchNotice(`✅ Sukses! ${updatedMap.size} foto berhasil dicocokkan otomatis & diperbarui ke data peserta.`);
-            setTimeout(() => setBatchNotice(null), 4000);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        pending--;
-        if (pending === 0 && updatedMap.size > 0) {
-          const newList = attendees.map((a) => {
-            if (updatedMap.has(a.id)) {
-              return { ...a, photoUrl: updatedMap.get(a.id)! };
-            }
-            return a;
-          });
-          onUpdateAttendees(newList);
-          setBatchNotice(`✅ Sukses! ${updatedMap.size} foto berhasil dicocokkan otomatis & diperbarui ke data peserta.`);
-          setTimeout(() => setBatchNotice(null), 4000);
+        } catch (err) {
+          console.error('Gagal membaca file batch:', file.name, err);
         }
       }
-    });
+    }
 
-    if (matchedCount === 0) {
+    if (updatedMap.size > 0) {
+      const newList = attendees.map((a) => {
+        if (updatedMap.has(a.id)) {
+          return { ...a, photoUrl: updatedMap.get(a.id)! };
+        }
+        return a;
+      });
+      onUpdateAttendees(newList);
+      setBatchNotice(`✅ Sukses! ${updatedMap.size} foto berhasil dicocokkan otomatis & diperbarui ke data peserta.`);
+      setTimeout(() => setBatchNotice(null), 4000);
+    } else if (matchedCount === 0) {
       setBatchNotice(`Tidak ada nama file foto yang cocok dengan NIP atau Nama peserta.`);
       setTimeout(() => setBatchNotice(null), 4000);
     }
@@ -212,14 +197,14 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
         ref={batchFileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         onChange={handleBatchPhotoUpload}
         className="hidden"
       />
       <input
         ref={singleFileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file && activeAttendeeIdForUpload) {
@@ -403,9 +388,17 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                             <img
                               src={resolvedUrlCache.get(item.photoUrl) || item.photoUrl}
                               alt={item.name}
-                              onError={(e) => {
-                                // If Drive image fails to load via regular img tag, fallback to initials badge
-                                (e.target as HTMLElement).style.display = 'none';
+                              onError={async (e) => {
+                                const imgEl = e.currentTarget;
+                                if (!imgEl.dataset.retriedHeic) {
+                                  imgEl.dataset.retriedHeic = 'true';
+                                  const converted = await resolvePhotoUrl(item.photoUrl);
+                                  if (converted && converted !== imgEl.src) {
+                                    imgEl.src = converted;
+                                    return;
+                                  }
+                                }
+                                imgEl.style.display = 'none';
                               }}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                             />

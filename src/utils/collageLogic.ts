@@ -27,13 +27,13 @@ export function formatIndonesianDate(dateStr: string): string {
 
 /**
  * Generate standard filename for the combined multi-page PDF output
- * e.g. "Dokumentasi_Absensi_P3K_Pagi_2026-10-26_(2_Halaman).pdf"
+ * e.g. "Dokumentasi_Absensi_Kolase_Pagi_2026-10-26_(2_Halaman).pdf"
  */
 export function generatePdfFileName(session: string, date: string, pageCount: number): string {
   const safeSession = (session || 'Semua').replace(/\s+/g, '_');
   const safeDate = date || new Date().toISOString().slice(0, 10);
   const safePages = Math.max(1, pageCount);
-  return `Dokumentasi_Absensi_P3K_${safeSession}_${safeDate}_(${safePages}_Halaman).pdf`;
+  return `Dokumentasi_Absensi_Kolase_${safeSession}_${safeDate}_(${safePages}_Halaman).pdf`;
 }
 
 /**
@@ -76,16 +76,16 @@ export function paginateAttendees(
 }
 
 /**
- * Extracts Google Drive file ID from open?id=, /file/d/, /d/, or uc?id= URLs
+ * Extracts Google Drive file ID from open?id=, /file/d/, /d/, uc?id=, or /api/drive-image?id= URLs
  */
 export function extractDriveImageId(url: string): string | null {
   if (!url) return null;
-  // Match id= parameter (open?id=, uc?id=, thumbnail?id=)
-  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  // Match id= parameter (open?id=, uc?id=, thumbnail?id=, /api/drive-image?id=)
+  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]{15,})/);
   if (idMatch) return idMatch[1];
 
   // Match /d/ or /file/d/ path
-  const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]{15,})/);
   if (dMatch) return dMatch[1];
 
   // Generic match if Google Drive / Google UserContent URL
@@ -98,12 +98,12 @@ export function extractDriveImageId(url: string): string | null {
 }
 
 /**
- * Returns a high-res direct image URL from a Google Drive sharing link
+ * Returns a CORS-safe local proxy image URL from a Google Drive sharing link
  */
 export function getDriveDirectImageUrl(url: string): string {
   const fileId = extractDriveImageId(url);
   if (!fileId) return url;
-  return `https://lh3.googleusercontent.com/d/${fileId}`;
+  return `/api/drive-image?id=${fileId}`;
 }
 
 /**
@@ -129,6 +129,128 @@ export function matchPhotoFilenameToAttendee(
 }
 
 /**
+ * Mendeteksi secara otomatis apakah daftar timestamp dari Google Sheet menggunakan
+ * format DD/MM/YYYY (Indonesia/UK) atau MM/DD/YYYY (US).
+ */
+export function detectSheetDayFirst(rawTimes: string[]): boolean {
+  for (const raw of rawTimes) {
+    if (!raw) continue;
+    const datePart = String(raw).trim().split(/\s+/)[0];
+    const parts = datePart.split(/[\/\-]/);
+    if (parts.length === 3 && parts[2].length === 4) {
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      if (p0 > 12 && p1 <= 12) return true;  // Pasti DD/MM/YYYY (contoh: 13/11/2026)
+      if (p1 > 12 && p0 <= 12) return false; // Pasti MM/DD/YYYY (contoh: 11/13/2026)
+    }
+  }
+  // Jika semua tanggal <= 12 (misal 05/11/2026), bandingkan mana yang lebih dekat dengan hari ini
+  const now = Date.now();
+  for (const raw of rawTimes) {
+    if (!raw) continue;
+    const datePart = String(raw).trim().split(/\s+/)[0];
+    const parts = datePart.split(/[\/\-]/);
+    if (parts.length === 3 && parts[2].length === 4) {
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      if (p0 >= 1 && p0 <= 12 && p1 >= 1 && p1 <= 12 && p0 !== p1) {
+        const asDdMm = new Date(year, p1 - 1, p0).getTime();
+        const asMmDd = new Date(year, p0 - 1, p1).getTime();
+        return Math.abs(now - asDdMm) <= Math.abs(now - asMmDd);
+      }
+    }
+  }
+  return true; // Default DD/MM/YYYY
+}
+
+/**
+ * Mem-parsing nilai Timestamp dari Google Sheets (mendukung DD/MM/YYYY, MM/DD/YYYY,
+ * maupun YYYY-MM-DD, serta pemisah jam ':' maupun '.') tanpa pernah melempar Invalid time value.
+ */
+export function parseFlexibleTimestamp(
+  rawTime: string,
+  dayFirst = true
+): { dateStr: string; isoTimestamp: string } {
+  const fallbackDate = new Date();
+  const fallbackDateStr = fallbackDate.toISOString().slice(0, 10);
+
+  if (!rawTime || !String(rawTime).trim()) {
+    return { dateStr: fallbackDateStr, isoTimestamp: fallbackDate.toISOString() };
+  }
+
+  const trimmed = String(rawTime).trim();
+  const tokens = trimmed.split(/\s+/);
+  const dateToken = tokens[0] || '';
+  const timeToken = tokens[1] || '00:00:00';
+  const ampmToken = (tokens[2] || '').toUpperCase();
+
+  let year = fallbackDate.getFullYear();
+  let month = fallbackDate.getMonth() + 1;
+  let day = fallbackDate.getDate();
+
+  const dateParts = dateToken.split(/[\/\-]/);
+  if (dateParts.length === 3) {
+    if (dateParts[0].length === 4) {
+      // YYYY-MM-DD
+      year = parseInt(dateParts[0], 10);
+      month = parseInt(dateParts[1], 10);
+      day = parseInt(dateParts[2], 10);
+    } else if (dateParts[2].length === 4) {
+      year = parseInt(dateParts[2], 10);
+      const p0 = parseInt(dateParts[0], 10);
+      const p1 = parseInt(dateParts[1], 10);
+
+      if (p0 > 12) {
+        // Pasti DD/MM/YYYY
+        day = p0;
+        month = p1;
+      } else if (p1 > 12) {
+        // Pasti MM/DD/YYYY
+        month = p0;
+        day = p1;
+      } else if (dayFirst) {
+        day = p0;
+        month = p1;
+      } else {
+        month = p0;
+        day = p1;
+      }
+    }
+  }
+
+  // Validasi rentang bulan & tanggal
+  if (isNaN(year) || year < 2000 || year > 2100) year = fallbackDate.getFullYear();
+  if (isNaN(month) || month < 1 || month > 12) month = fallbackDate.getMonth() + 1;
+  if (isNaN(day) || day < 1 || day > 31) day = fallbackDate.getDate();
+
+  // Parse jam (mendukung 16:02:59 maupun 16.02.59)
+  const timeParts = timeToken.split(/[:\.]/);
+  let hours = parseInt(timeParts[0] || '0', 10);
+  const minutes = parseInt(timeParts[1] || '0', 10);
+  const seconds = parseInt(timeParts[2] || '0', 10);
+
+  if (ampmToken === 'PM' && hours < 12) hours += 12;
+  if (ampmToken === 'AM' && hours === 12) hours = 0;
+
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const constructed = new Date(
+    year,
+    month - 1,
+    day,
+    isNaN(hours) ? 0 : hours,
+    isNaN(minutes) ? 0 : minutes,
+    isNaN(seconds) ? 0 : seconds
+  );
+
+  const isoTimestamp = !isNaN(constructed.getTime())
+    ? constructed.toISOString()
+    : fallbackDate.toISOString();
+
+  return { dateStr, isoTimestamp };
+}
+
+/**
  * Parses Google Form responses CSV exported from Google Sheets
  */
 export function parseGoogleSheetCsv(csvContent: string): AttendanceRecord[] {
@@ -151,61 +273,49 @@ export function parseGoogleSheetCsv(csvContent: string): AttendanceRecord[] {
   let photoIdx = headers.findIndex((h) => h.includes('foto') || h.includes('bukti') || h.includes('unggah') || h.includes('drive'));
   let sessionIdx = headers.findIndex((h) => h.includes('sesi'));
 
-  // Fallbacks if header names are slightly different
+  // Fallbacks if header names are slightly different:
+  // Kolom A(0): Timestamp, B(1): NIP, C(2): Nama, D(3): Sesi, E(4): Foto
   if (timestampIdx === -1) timestampIdx = 0;
   if (nipIdx === -1) nipIdx = 1;
   if (nameIdx === -1) nameIdx = 2;
-  if (photoIdx === -1) photoIdx = 3;
-  if (sessionIdx === -1) sessionIdx = 4;
+  if (sessionIdx === -1) sessionIdx = 3;
+  if (photoIdx === -1) photoIdx = 4;
+
+  const parsedRows = lines.slice(1).map((rawLine) =>
+    rawLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.trim().replace(/^"|"$/g, ''))
+  );
+  const isDayFirst = detectSheetDayFirst(parsedRows.map((cols) => cols[timestampIdx] || ''));
 
   const records: AttendanceRecord[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const rawLine = lines[i];
-    // Split by comma outside quotes
-    const cols = rawLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.trim().replace(/^"|"$/g, ''));
+  for (let i = 0; i < parsedRows.length; i++) {
+    const cols = parsedRows[i];
 
     const rawTime = cols[timestampIdx] || '';
     const rawNip = cols[nipIdx] || '';
     const rawName = cols[nameIdx] || '';
-    const rawPhoto = cols[photoIdx] || '';
     const rawSession = cols[sessionIdx] || 'Pagi';
+    const rawPhoto = cols[photoIdx] || '';
 
     if (!rawNip && !rawName) continue;
 
-    // Parse date into YYYY-MM-DD
-    let dateStr = '2026-10-26';
-    if (rawTime) {
-      const parts = rawTime.split(' ')[0].split(/[\/\-]/);
-      if (parts.length === 3) {
-        // If MM/DD/YYYY (e.g. 10/26/2026)
-        if (parts[2].length === 4) {
-          const month = parts[0].padStart(2, '0');
-          const day = parts[1].padStart(2, '0');
-          const year = parts[2];
-          dateStr = `${year}-${month}-${day}`;
-        } else if (parts[0].length === 4) {
-          // YYYY-MM-DD
-          dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        }
-      }
-    }
+    const { dateStr, isoTimestamp } = parseFlexibleTimestamp(rawTime, isDayFirst);
 
     const session: AttendanceSession = rawSession.toLowerCase().includes('sore') ? 'Sore' : 'Pagi';
     const photoUrl = rawPhoto.includes('drive.google.com')
       ? getDriveDirectImageUrl(rawPhoto)
-      : rawPhoto || generateAvatarDataUrl(rawName, 'm', 'Peserta P3K');
+      : rawPhoto || generateAvatarDataUrl(rawName, 'm', 'Peserta');
 
     records.push({
-      id: `p3k-${i}-${Date.now()}`,
-      timestamp: rawTime ? new Date(rawTime).toISOString() : new Date().toISOString(),
+      id: `att-${i + 1}-${Date.now()}`,
+      timestamp: isoTimestamp,
       nip: rawNip.replace(/\D/g, '') || rawNip,
       name: rawName,
       session,
       date: dateStr,
       photoUrl,
       status: 'valid',
-      department: 'P3K / Tenaga Kerja'
+      department: 'Peserta'
     });
   }
 
@@ -390,29 +500,6 @@ export function generateAvatarDataUrl(seedName: string, gender: 'm' | 'f' = 'm',
  * 14 participants -> Page 1 (6), Page 2 (6), Page 3 (2).
  */
 export const SAMPLE_ATTENDEES: AttendanceRecord[] = [
-  // User's Real Synchronized Google Form Entries (Absensi P3K)
-  {
-    id: 'p3k-real-01',
-    timestamp: '2026-10-26T14:43:03Z',
-    nip: '1123123',
-    name: 'aaaaaaaaaa',
-    session: 'Pagi',
-    date: '2026-10-26',
-    photoUrl: getDriveDirectImageUrl('https://drive.google.com/open?id=1a3XjL1j4GiPFVDxHyuhOYFvlOnUhPH90'),
-    status: 'valid',
-    department: 'Peserta P3K'
-  },
-  {
-    id: 'p3k-real-02',
-    timestamp: '2026-10-26T16:00:49Z',
-    nip: '1412414',
-    name: 'gusti',
-    session: 'Pagi',
-    date: '2026-10-26',
-    photoUrl: getDriveDirectImageUrl('https://drive.google.com/open?id=1qkEdHTDBtQxta0hiqI9MujdCorG_Lf4E'),
-    status: 'valid',
-    department: 'Peserta P3K'
-  },
   {
     id: 'att-01',
     timestamp: '2026-10-26T07:14:22Z',

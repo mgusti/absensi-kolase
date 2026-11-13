@@ -6,6 +6,7 @@
 import { AttendanceRecord, CollageSettings } from '../types/attendance.ts';
 import { formatIndonesianDate, generatePdfFileName, extractDriveImageId } from './collageLogic.ts';
 import { fetchDriveImageBlob } from '../services/firebase.ts';
+import { ensureBrowserCompatibleImageBlob } from './heicConverter.ts';
 import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 
@@ -50,18 +51,25 @@ export async function resolvePhotoUrl(rawUrl: string): Promise<string> {
       console.warn('Gagal mengambil blob Drive untuk file ID:', fileId, e);
     }
 
-    // Fallback: fetch via lh3 URL to get CORS-safe Blob URL
-    const fallbackUrl = `https://lh3.googleusercontent.com/d/${fileId}=w1000`;
+    // Fallback ke local server proxy
+    const proxyUrl = `/api/drive-image?id=${fileId}`;
+    resolvedUrlCache.set(rawUrl, proxyUrl);
+    return proxyUrl;
+  }
+
+  // Jika URL langsung ke file .heic / .heif eksternal, konversi ke Blob JPEG
+  if (/\.(heic|heif)(\?.*)?$/i.test(rawUrl)) {
     try {
-      const res = await fetch(fallbackUrl);
+      const res = await fetch(rawUrl);
       if (res.ok) {
-        const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
+        const rawBlob = await res.blob();
+        const convertedBlob = await ensureBrowserCompatibleImageBlob(rawBlob, rawUrl);
+        const objectUrl = URL.createObjectURL(convertedBlob);
         resolvedUrlCache.set(rawUrl, objectUrl);
         return objectUrl;
       }
-    } catch {
-      // Last resort: return raw URL (may taint canvas)
+    } catch (e) {
+      console.warn('Gagal mengonversi URL HEIC:', rawUrl, e);
     }
   }
 
@@ -74,6 +82,7 @@ export async function preloadImage(src: string): Promise<HTMLImageElement> {
     if (cached.complete && cached.naturalWidth > 0) {
       return cached;
     }
+    imageCache.delete(src);
   }
 
   const resolved = await resolvePhotoUrl(src);
@@ -83,30 +92,31 @@ export async function preloadImage(src: string): Promise<HTMLImageElement> {
       imageCache.set(src, cached);
       return cached;
     }
+    imageCache.delete(resolved);
   }
 
   return new Promise((resolve) => {
     const img = new Image();
-    const isBlobOrData = resolved.startsWith('blob:') || resolved.startsWith('data:');
+    const isLocalOrBlob =
+      resolved.startsWith('blob:') ||
+      resolved.startsWith('data:') ||
+      resolved.startsWith('/api/');
 
     // Only set anonymous crossOrigin for external HTTP/HTTPS URLs
-    if (!isBlobOrData) {
+    if (!isLocalOrBlob) {
       img.crossOrigin = 'anonymous';
     }
 
     img.onload = () => {
-      imageCache.set(src, img);
-      imageCache.set(resolved, img);
+      if (img.naturalWidth > 0) {
+        imageCache.set(src, img);
+        imageCache.set(resolved, img);
+      }
       resolve(img);
     };
 
     img.onerror = () => {
       console.warn('Gagal memuat gambar peserta:', resolved);
-      // Never retry without crossOrigin — that taints the canvas and
-      // blocks toDataURL/toBlob on PDF/PNG/ZIP export.
-      // Resolve with the failed img (naturalWidth === 0) so the
-      // renderer falls through to the avatar-initials fallback.
-      imageCache.set(src, img);
       resolve(img);
     };
 
@@ -363,7 +373,7 @@ export async function renderCollagePage(
           .filter(Boolean)
           .slice(0, 2)
           .map((n) => n[0].toUpperCase())
-          .join('') || 'P3K';
+          .join('') || 'AK';
 
         ctx.fillStyle = tmpl === 'formal' ? '#94A3B8' : '#78716C';
         ctx.font = '700 24px "Plus Jakarta Sans", sans-serif';

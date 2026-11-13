@@ -16,7 +16,7 @@ service cloud.firestore {
         request.resource.data.name is string && request.resource.data.name.size() <= 100 &&
         request.resource.data.session in ['Pagi', 'Sore'] &&
         request.resource.data.date is string && request.resource.data.date.size() <= 10;
-      allow delete: if request.auth != null;
+      allow delete: if true;
     }
 
     match /settings/{settingsId} {
