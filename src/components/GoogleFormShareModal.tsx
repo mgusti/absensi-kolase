@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Copy, Check, ExternalLink, Share2, QrCode, Download, Printer, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Copy, Check, ExternalLink, Share2, QrCode, Download, Printer } from 'lucide-react';
 import QRCode from 'qrcode';
 
 interface GoogleFormShareModalProps {
@@ -24,7 +24,6 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
 
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'qr' | 'embed'>('qr');
 
   useEffect(() => {
     if (!formUrl.trim()) {
@@ -131,144 +130,91 @@ export const GoogleFormShareModal: React.FC<GoogleFormShareModalProps> = ({
           </button>
         </div>
 
-        {/* View mode toggle */}
-        <div className="mt-4 flex items-center gap-2 p-1 bg-stone-100 rounded-lg">
-          <button
-            onClick={() => setViewMode('qr')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${
-              viewMode === 'qr'
-                ? 'bg-white text-stone-900 shadow-sm'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <QrCode className="w-4 h-4" />
-            <span>Tautan & QR Code Scan HP</span>
-          </button>
-          <button
-            onClick={() => setViewMode('embed')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${
-              viewMode === 'embed'
-                ? 'bg-white text-stone-900 shadow-sm'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <Eye className="w-4 h-4" />
-            <span>Pratinjau Langsung Formulir</span>
-          </button>
-        </div>
-
-        {viewMode === 'qr' ? (
-          <div className="mt-5 space-y-5">
-            {/* Link Box */}
-            <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">
-                Tautan Langsung Google Form Peserta:
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="url"
-                  placeholder="Masukkan URL Google Form baru Anda (https://docs.google.com/forms/...)"
-                  value={formUrl}
-                  onChange={(e) => onUpdateFormUrl(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-900"
-                />
-                <button
-                  onClick={handleCopyLink}
-                  disabled={!formUrl.trim()}
-                  className="px-3 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors disabled:opacity-50"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Tersalin' : 'Salin'}</span>
-                </button>
-                {formUrl.trim() && (
-                  <a
-                    href={formUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-2 border border-stone-200 hover:bg-stone-50 rounded-lg text-stone-700 transition-colors"
-                    title="Buka di tab baru"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </div>
-            </div>
-
-            {/* QR Code Container */}
-            <div className="border border-stone-200 rounded-xl p-4 bg-stone-50 flex flex-col sm:flex-row items-center gap-6">
-              <div className="bg-white p-2 rounded-xl shadow-sm border border-stone-200 shrink-0">
-                {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="QR Code Presensi" className="w-36 h-36" />
-                ) : (
-                  <div className="w-36 h-36 bg-stone-100 flex items-center justify-center text-center p-2 text-xs text-stone-400">
-                    Masukkan URL Google Form untuk membuat QR Code
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 text-center sm:text-left space-y-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700">
-                  Scan QR Code Menggunakan Kamera HP
-                </h3>
-                <p className="text-xs text-stone-600">
-                  Peserta cukup mengarahkan kamera ponsel ke QR code ini untuk langsung membuka Google Form absensi tanpa perlu mengetik tautan.
-                </p>
-                <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <button
-                    onClick={handleDownloadQr}
-                    className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Unduh Gambar QR</span>
-                  </button>
-                  <button
-                    onClick={handlePrintQrSheet}
-                    className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Cetak Lembar Meja</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* WhatsApp Share Button */}
-            <div className="pt-2 border-t border-stone-100">
+        <div className="mt-5 space-y-5">
+          {/* Link Box */}
+          <div>
+            <label className="block text-xs font-bold text-stone-700 mb-1">
+              Tautan Langsung Google Form Peserta:
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                placeholder="Masukkan URL Google Form baru Anda (https://docs.google.com/forms/...)"
+                value={formUrl}
+                onChange={(e) => onUpdateFormUrl(e.target.value)}
+                className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono text-stone-700 focus:outline-none focus:ring-1 focus:ring-stone-900"
+              />
               <button
-                onClick={handleShareWhatsApp}
-                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-colors"
+                onClick={handleCopyLink}
+                disabled={!formUrl.trim()}
+                className="px-3 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors disabled:opacity-50"
               >
-                <Share2 className="w-4 h-4" />
-                <span>Bagikan Tautan Absensi ke Grup WhatsApp</span>
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Tersalin' : 'Salin'}</span>
               </button>
+              {formUrl.trim() && (
+                <a
+                  href={formUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 border border-stone-200 hover:bg-stone-50 rounded-lg text-stone-700 transition-colors"
+                  title="Buka di tab baru"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
             </div>
           </div>
-        ) : (
-          <div className="mt-4">
-            <div className="w-full h-[460px] rounded-xl overflow-hidden border border-stone-200 bg-stone-50">
-              <iframe
-                src={formUrl}
-                width="100%"
-                height="100%"
-                title="Google Form Presensi"
-                className="w-full h-full border-none"
-              >
-                Memuat formulir Google Form...
-              </iframe>
+
+          {/* QR Code Container */}
+          <div className="border border-stone-200 rounded-xl p-4 bg-stone-50 flex flex-col sm:flex-row items-center gap-6">
+            <div className="bg-white p-2 rounded-xl shadow-sm border border-stone-200 shrink-0">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="QR Code Presensi" className="w-36 h-36" />
+              ) : (
+                <div className="w-36 h-36 bg-stone-100 flex items-center justify-center text-center p-2 text-xs text-stone-400">
+                  Masukkan URL Google Form untuk membuat QR Code
+                </div>
+              )}
             </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-stone-500">
-              <span>Jika iframe tidak tampil karena batasan Google, buka langsung melalui link.</span>
-              <a
-                href={formUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-stone-900 font-semibold underline flex items-center gap-1"
-              >
-                Buka Tab Penuh <ExternalLink className="w-3 h-3" />
-              </a>
+
+            <div className="flex-1 text-center sm:text-left space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700">
+                Scan QR Code Menggunakan Kamera HP
+              </h3>
+              <p className="text-xs text-stone-600">
+                Peserta cukup mengarahkan kamera ponsel ke QR code ini untuk langsung membuka Google Form absensi tanpa perlu mengetik tautan.
+              </p>
+              <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <button
+                  onClick={handleDownloadQr}
+                  className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh Gambar QR</span>
+                </button>
+                <button
+                  onClick={handlePrintQrSheet}
+                  className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Lembar Meja</span>
+                </button>
+              </div>
             </div>
           </div>
-        )}
+
+          {/* WhatsApp Share Button */}
+          <div className="pt-2 border-t border-stone-100">
+            <button
+              onClick={handleShareWhatsApp}
+              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-colors"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Bagikan Tautan Absensi ke Grup WhatsApp</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

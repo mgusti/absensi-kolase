@@ -5,7 +5,7 @@
 
 import { AttendanceRecord, CollageSettings } from '../types/attendance.ts';
 import { formatIndonesianDate, generatePdfFileName, extractDriveImageId } from './collageLogic.ts';
-import { fetchDriveImageBlob } from '../services/firebase.ts';
+import { fetchDriveImageBlob } from '../services/googleWorkspace.ts';
 import { ensureBrowserCompatibleImageBlob } from './heicConverter.ts';
 import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
@@ -184,36 +184,209 @@ export async function renderCollagePage(
   // Preload all attendee images
   await Promise.all(pageRecords.map((r) => preloadImage(r.photoUrl)));
 
-  // Color schemes according to template
+  // Color schemes according to template & selected color variant
   const tmpl = settings.template;
+  const colorA = settings.frameColorA || 'classic_beige';
+  const colorB = settings.frameColorB || 'navy_gold';
 
   let bgFill = '#F8F5EE';
   let headerBg = '#F3EFE6';
+  let headerBorder = '#E2D6C0';
+  let outerFramePrimary = '#D9CEB8';
+  let outerFrameSecondary = '#EFE6D5';
   let primaryText = '#292524';
   let secondaryText = '#78716C';
-  let accentColor = '#B8860B'; // Dark gold
+  let accentColor = '#B8860B';
+  let headerSubtitleColor = '#78716C';
+  let headerTitleColor = '#292524';
+  let headerDateColor = '#B8860B';
+  let headerAccentStrip = '#D4AF37';
   let cardBg = '#FFFFFF';
   let cardBorder = '#E7DFCF';
-  let footerBg = '#EFE9DC';
+  let photoBorder = '#DFD5C2';
+  let badgeBg = 'rgba(41,37,36,0.85)';
+  let emptyPhotoBg = '#EAE4D5';
+  let emptyPhotoText = '#78716C';
+  let footerDivider = '#DFD5C2';
 
-  if (tmpl === 'formal') {
+  if (tmpl === 'beige') {
+    if (colorA === 'sage_emerald') {
+      bgFill = '#EEF5F0';
+      headerBg = '#E0EDE4';
+      headerBorder = '#B8D4C2';
+      outerFramePrimary = '#7FA98F';
+      outerFrameSecondary = '#CFE2D6';
+      primaryText = '#143323';
+      secondaryText = '#3F624F';
+      accentColor = '#0F766E';
+      cardBg = '#FFFFFF';
+      cardBorder = '#C3DBD0';
+      photoBorder = '#B2CEC0';
+      badgeBg = '#143323';
+      emptyPhotoBg = '#DCEBE1';
+      emptyPhotoText = '#3F624F';
+      footerDivider = '#B8D4C2';
+    } else if (colorA === 'rose_terracotta') {
+      bgFill = '#FDF2F0';
+      headerBg = '#F9E5E1';
+      headerBorder = '#E5C0B8';
+      outerFramePrimary = '#C98A7E';
+      outerFrameSecondary = '#F0D3CC';
+      primaryText = '#431407';
+      secondaryText = '#7C2D12';
+      accentColor = '#BE123C';
+      cardBg = '#FFFFFF';
+      cardBorder = '#E8C9C2';
+      photoBorder = '#DEB8B0';
+      badgeBg = '#571B0E';
+      emptyPhotoBg = '#F5DDD8';
+      emptyPhotoText = '#7C2D12';
+      footerDivider = '#E5C0B8';
+    } else if (colorA === 'sky_azure') {
+      bgFill = '#F0F6FC';
+      headerBg = '#E1EEF9';
+      headerBorder = '#B9D5EE';
+      outerFramePrimary = '#7BAAD8';
+      outerFrameSecondary = '#CCE0F3';
+      primaryText = '#0C2D48';
+      secondaryText = '#3B6285';
+      accentColor = '#0369A1';
+      cardBg = '#FFFFFF';
+      cardBorder = '#C2DBF0';
+      photoBorder = '#B0CEEA';
+      badgeBg = '#0C2D48';
+      emptyPhotoBg = '#DCEBF7';
+      emptyPhotoText = '#3B6285';
+      footerDivider = '#B9D5EE';
+    } else if (colorA === 'lavender_plum') {
+      bgFill = '#F6F2FA';
+      headerBg = '#ECE4F5';
+      headerBorder = '#CDBCE3';
+      outerFramePrimary = '#9F82C7';
+      outerFrameSecondary = '#DDD0EC';
+      primaryText = '#2E1065';
+      secondaryText = '#5B3E85';
+      accentColor = '#7E22CE';
+      cardBg = '#FFFFFF';
+      cardBorder = '#D6C6EA';
+      photoBorder = '#C5B1DF';
+      badgeBg = '#2E1065';
+      emptyPhotoBg = '#E7DDF3';
+      emptyPhotoText = '#5B3E85';
+      footerDivider = '#CDBCE3';
+    }
+    headerSubtitleColor = secondaryText;
+    headerTitleColor = primaryText;
+    headerDateColor = accentColor;
+  } else if (tmpl === 'formal') {
+    // Default Formal B: navy_gold (Biru Tua & Emas)
     bgFill = '#F1F5F9';
     headerBg = '#0B1D3A';
+    headerAccentStrip = '#D4AF37';
+    outerFramePrimary = '#0B1D3A';
     primaryText = '#0F172A';
     secondaryText = '#475569';
     accentColor = '#1E3A8A';
+    headerSubtitleColor = '#94A3B8';
+    headerTitleColor = '#FFFFFF';
+    headerDateColor = '#E2E8F0';
     cardBg = '#FFFFFF';
     cardBorder = '#CBD5E1';
-    footerBg = '#E2E8F0';
+    photoBorder = '#CBD5E1';
+    badgeBg = '#0B1D3A';
+    emptyPhotoBg = '#0F172A';
+    emptyPhotoText = '#CBD5E1';
+    footerDivider = '#CBD5E1';
+
+    if (colorB === 'emerald_gold') {
+      bgFill = '#ECFDF5';
+      headerBg = '#064E3B';
+      headerAccentStrip = '#F59E0B';
+      outerFramePrimary = '#064E3B';
+      primaryText = '#064E3B';
+      secondaryText = '#047857';
+      accentColor = '#065F46';
+      headerSubtitleColor = '#A7F3D0';
+      headerTitleColor = '#FFFFFF';
+      headerDateColor = '#FEF3C7';
+      cardBg = '#FFFFFF';
+      cardBorder = '#A7F3D0';
+      photoBorder = '#6EE7B7';
+      badgeBg = '#064E3B';
+      emptyPhotoBg = '#064E3B';
+      emptyPhotoText = '#D1FAE5';
+      footerDivider = '#A7F3D0';
+    } else if (colorB === 'maroon_gold') {
+      bgFill = '#FFF1F2';
+      headerBg = '#6B0F1A';
+      headerAccentStrip = '#FBBF24';
+      outerFramePrimary = '#6B0F1A';
+      primaryText = '#4C0519';
+      secondaryText = '#881337';
+      accentColor = '#9F1239';
+      headerSubtitleColor = '#FECDD3';
+      headerTitleColor = '#FFFFFF';
+      headerDateColor = '#FDE68A';
+      cardBg = '#FFFFFF';
+      cardBorder = '#FECDD3';
+      photoBorder = '#FDA4AF';
+      badgeBg = '#6B0F1A';
+      emptyPhotoBg = '#4C0519';
+      emptyPhotoText = '#FFE4E6';
+      footerDivider = '#FECDD3';
+    } else if (colorB === 'charcoal_cyan') {
+      bgFill = '#F4F4F5';
+      headerBg = '#18181B';
+      headerAccentStrip = '#06B6D4';
+      outerFramePrimary = '#18181B';
+      primaryText = '#18181B';
+      secondaryText = '#52525B';
+      accentColor = '#0891B2';
+      headerSubtitleColor = '#A1A1AA';
+      headerTitleColor = '#FFFFFF';
+      headerDateColor = '#67E8F9';
+      cardBg = '#FFFFFF';
+      cardBorder = '#D4D4D8';
+      photoBorder = '#CBD5E1';
+      badgeBg = '#18181B';
+      emptyPhotoBg = '#18181B';
+      emptyPhotoText = '#E4E4E7';
+      footerDivider = '#D4D4D8';
+    } else if (colorB === 'royal_purple') {
+      bgFill = '#F5F3FF';
+      headerBg = '#2E1065';
+      headerAccentStrip = '#C084FC';
+      outerFramePrimary = '#2E1065';
+      primaryText = '#1E1B4B';
+      secondaryText = '#5B21B6';
+      accentColor = '#6D28D9';
+      headerSubtitleColor = '#DDD6FE';
+      headerTitleColor = '#FFFFFF';
+      headerDateColor = '#F3E8FF';
+      cardBg = '#FFFFFF';
+      cardBorder = '#DDD6FE';
+      photoBorder = '#C4B5FD';
+      badgeBg = '#2E1065';
+      emptyPhotoBg = '#2E1065';
+      emptyPhotoText = '#EDE9FE';
+      footerDivider = '#DDD6FE';
+    }
   } else if (tmpl === 'minimal') {
     bgFill = '#FFFFFF';
     headerBg = '#FAFAFA';
     primaryText = '#18181B';
     secondaryText = '#71717A';
     accentColor = '#09090B';
+    headerSubtitleColor = '#71717A';
+    headerTitleColor = '#18181B';
+    headerDateColor = '#09090B';
     cardBg = '#FAFAFA';
     cardBorder = '#E4E4E7';
-    footerBg = '#F4F4F5';
+    photoBorder = '#CBD5E1';
+    badgeBg = 'rgba(24,24,27,0.88)';
+    emptyPhotoBg = '#F4F4F5';
+    emptyPhotoText = '#71717A';
+    footerDivider = '#E4E4E7';
   }
 
   // 1. Draw Background
@@ -222,15 +395,15 @@ export async function renderCollagePage(
 
   // Outer framing decorative line (Beige Elegant & Formal)
   if (tmpl === 'beige') {
-    ctx.strokeStyle = '#D9CEB8';
+    ctx.strokeStyle = outerFramePrimary;
     ctx.lineWidth = 3;
     ctx.strokeRect(28, 28, width - 56, height - 56);
 
-    ctx.strokeStyle = '#EFE6D5';
+    ctx.strokeStyle = outerFrameSecondary;
     ctx.lineWidth = 1;
     ctx.strokeRect(34, 34, width - 68, height - 68);
   } else if (tmpl === 'formal') {
-    ctx.strokeStyle = '#0B1D3A';
+    ctx.strokeStyle = outerFramePrimary;
     ctx.lineWidth = 6;
     ctx.strokeRect(20, 20, width - 40, height - 40);
   }
@@ -241,14 +414,14 @@ export async function renderCollagePage(
     ctx.fillStyle = headerBg;
     ctx.fillRect(30, 30, width - 60, headerHeight);
 
-    // Gold accent hairline
-    ctx.fillStyle = '#D4AF37';
+    // Accent hairline
+    ctx.fillStyle = headerAccentStrip;
     ctx.fillRect(30, 30 + headerHeight - 4, width - 60, 4);
   } else if (tmpl === 'beige') {
     ctx.fillStyle = headerBg;
     roundRect(ctx, 44, 44, width - 88, headerHeight - 10, 12);
     ctx.fill();
-    ctx.strokeStyle = '#E2D6C0';
+    ctx.strokeStyle = headerBorder;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   } else {
@@ -266,11 +439,10 @@ export async function renderCollagePage(
   // Text inside header
   ctx.textAlign = 'center';
   const headerCenterY = isPortrait ? 130 : 110;
-  const isFormalHeader = tmpl === 'formal';
 
   // Subtitle / Institution
   ctx.font = '600 16px "Plus Jakarta Sans", sans-serif';
-  ctx.fillStyle = isFormalHeader ? '#94A3B8' : secondaryText;
+  ctx.fillStyle = headerSubtitleColor;
   const institution = (settings.institutionName || 'DOKUMENTASI ABSENSI HARIAN').toUpperCase();
   const unit = settings.unitName ? ` · ${settings.unitName.toUpperCase()}` : '';
   ctx.fillText(fitText(ctx, `${institution}${unit}`, width - 140), width / 2, headerCenterY - 45);
@@ -284,13 +456,13 @@ export async function renderCollagePage(
   } else {
     ctx.font = '800 42px "Plus Jakarta Sans", sans-serif';
   }
-  ctx.fillStyle = isFormalHeader ? '#FFFFFF' : primaryText;
+  ctx.fillStyle = headerTitleColor;
   ctx.fillText(sessionTitle, width / 2, headerCenterY + 10);
 
   // Date & Page summary
   const dateFormatted = formatIndonesianDate(settings.selectedDate);
   ctx.font = '600 18px "Plus Jakarta Sans", sans-serif';
-  ctx.fillStyle = isFormalHeader ? '#E2E8F0' : accentColor;
+  ctx.fillStyle = headerDateColor;
   ctx.fillText(`${dateFormatted}  ·  HALAMAN ${pageIndex + 1} DARI ${totalPages}`, width / 2, headerCenterY + 45);
 
   // 3. Photo Grid (3 Columns x 2 Rows = 6 slots)
@@ -309,24 +481,35 @@ export async function renderCollagePage(
   const cardWidth = (gridWidth - (cols - 1) * gapX) / cols;
   const cardHeight = (gridHeight - (rows - 1) * gapY) / rows;
 
-  for (let slot = 0; slot < 6; slot++) {
-    const col = slot % cols;
-    const row = Math.floor(slot / cols);
-    const cardX = gridLeft + col * (cardWidth + gapX);
-    const cardY = gridTop + row * (cardHeight + gapY);
-
-    const attendee = pageRecords[slot];
-
-    // Card background
+  if (pageRecords.length === 0) {
+    // Jika belum ada foto sama sekali pada tanggal/sesi ini, tampilkan tulisan "Foto Kosong" tanpa kotak Slot Tersedia
     ctx.save();
-    roundRect(ctx, cardX, cardY, cardWidth, cardHeight, 14);
-    ctx.fillStyle = cardBg;
-    ctx.fill();
-    ctx.strokeStyle = cardBorder;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = secondaryText;
+    ctx.font = '700 28px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('Foto Kosong', width / 2, (gridTop + gridBottom) / 2);
+    ctx.restore();
+  } else {
+    // Hanya tampilkan kartu untuk foto peserta yang sudah ada (tanpa kotak "Slot Tersedia")
+    for (let slot = 0; slot < Math.min(6, pageRecords.length); slot++) {
+      const attendee = pageRecords[slot];
+      if (!attendee) continue;
 
-    if (attendee) {
+      const col = slot % cols;
+      const row = Math.floor(slot / cols);
+      const cardX = gridLeft + col * (cardWidth + gapX);
+      const cardY = gridTop + row * (cardHeight + gapY);
+
+      // Card background
+      ctx.save();
+      roundRect(ctx, cardX, cardY, cardWidth, cardHeight, 14);
+      ctx.fillStyle = cardBg;
+      ctx.fill();
+      ctx.strokeStyle = cardBorder;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
       // Photo area
       const photoPadding = 12;
       const photoWidth = cardWidth - photoPadding * 2;
@@ -345,7 +528,10 @@ export async function renderCollagePage(
         // Draw image aspect-fill
         const imgAspect = cachedImg.naturalWidth / cachedImg.naturalHeight;
         const boxAspect = photoWidth / photoHeight;
-        let sx = 0, sy = 0, sw = cachedImg.naturalWidth, sh = cachedImg.naturalHeight;
+        let sx = 0,
+          sy = 0,
+          sw = cachedImg.naturalWidth,
+          sh = cachedImg.naturalHeight;
 
         if (imgAspect > boxAspect) {
           sw = cachedImg.naturalHeight * boxAspect;
@@ -356,39 +542,21 @@ export async function renderCollagePage(
         }
         ctx.drawImage(cachedImg, sx, sy, sw, sh, photoX, photoY, photoWidth, photoHeight);
       } else {
-        // High-fidelity fallback avatar with participant's initials
-        ctx.fillStyle = tmpl === 'formal' ? '#0F172A' : '#EAE4D5';
+        // Jika foto peserta belum ada / gagal dimuat, tampilkan tulisan "Foto Kosong"
+        ctx.fillStyle = emptyPhotoBg;
         ctx.fillRect(photoX, photoY, photoWidth, photoHeight);
 
-        // Silhouette avatar shape / monogram circle
-        ctx.fillStyle = tmpl === 'formal' ? '#1E293B' : '#D8CFBC';
-        ctx.beginPath();
-        ctx.arc(photoX + photoWidth / 2, photoY + photoHeight * 0.42, photoWidth * 0.24, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Initials in center of circle
-        const initials = attendee.name
-          .replace(/^(dr\.|drs\.|drg\.|ir\.|h\.|hj\.)\s+/i, '')
-          .split(' ')
-          .filter(Boolean)
-          .slice(0, 2)
-          .map((n) => n[0].toUpperCase())
-          .join('') || 'AK';
-
-        ctx.fillStyle = tmpl === 'formal' ? '#94A3B8' : '#78716C';
-        ctx.font = '700 24px "Plus Jakarta Sans", sans-serif';
+        ctx.fillStyle = emptyPhotoText;
+        ctx.font = '700 18px "Plus Jakarta Sans", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(initials, photoX + photoWidth / 2, photoY + photoHeight * 0.45);
-
-        // Label at bottom
-        ctx.fillStyle = tmpl === 'formal' ? '#CBD5E1' : '#44403C';
-        ctx.font = '700 11px "Plus Jakarta Sans", sans-serif';
-        ctx.fillText('FOTO DOKUMENTASI', photoX + photoWidth / 2, photoY + photoHeight - 16);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Foto Kosong', photoX + photoWidth / 2, photoY + photoHeight / 2);
+        ctx.textBaseline = 'alphabetic';
       }
       ctx.restore();
 
       // Border around photo
-      ctx.strokeStyle = tmpl === 'beige' ? '#DFD5C2' : '#CBD5E1';
+      ctx.strokeStyle = photoBorder;
       ctx.lineWidth = 1;
       roundRect(ctx, photoX, photoY, photoWidth, photoHeight, 10);
       ctx.stroke();
@@ -411,27 +579,16 @@ export async function renderCollagePage(
 
       // Number badge on top right of photo
       const indexNum = String(pageIndex * 6 + slot + 1).padStart(2, '0');
-      ctx.fillStyle = tmpl === 'formal' ? '#0B1D3A' : 'rgba(41,37,36,0.85)';
+      ctx.fillStyle = badgeBg;
       roundRect(ctx, photoX + photoWidth - 36, photoY + 8, 28, 22, 6);
       ctx.fill();
       ctx.fillStyle = '#FFFFFF';
       ctx.font = '700 11px "Plus Jakarta Sans", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(indexNum, photoX + photoWidth - 22, photoY + 23);
-    } else {
-      // Empty slot placeholder
-      ctx.strokeStyle = '#E2E8F0';
-      ctx.setLineDash([6, 6]);
-      roundRect(ctx, cardX + 12, cardY + 12, cardWidth - 24, cardHeight - 24, 10);
-      ctx.stroke();
-      ctx.setLineDash([]);
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#94A3B8';
-      ctx.font = '500 14px "Plus Jakarta Sans", sans-serif';
-      ctx.fillText('Slot Tersedia', cardX + cardWidth / 2, cardY + cardHeight / 2);
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   // 4. Footer Bar
@@ -439,7 +596,7 @@ export async function renderCollagePage(
   ctx.textAlign = 'center';
 
   // Divider line above footer
-  ctx.strokeStyle = tmpl === 'beige' ? '#DFD5C2' : '#E2E8F0';
+  ctx.strokeStyle = footerDivider;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(60, footerY - 14);
@@ -498,16 +655,22 @@ export async function copyCanvasToClipboard(canvas: HTMLCanvasElement): Promise<
   });
 }
 
+export interface PdfExportOptions {
+  compressed?: boolean;
+}
+
 /**
  * Render all collage pages into a single multi-page PDF document.
  * If there are 2 images/pages (e.g. 7-12 attendees), the resulting PDF has exactly 2 pages.
- * 1 image = 1 PDF page, rendered at high resolution matching the collage orientation.
+ * Supports `compressed: true` for significantly smaller file size (ideal for WhatsApp / email / portal upload).
  */
 export async function generateCollagePdfBlob(
   attendees: AttendanceRecord[],
   settings: CollageSettings,
-  onProgress?: (current: number, total: number, phase: string) => void
+  onProgress?: (current: number, total: number, phase: string) => void,
+  options?: PdfExportOptions
 ): Promise<{ blob: Blob; filename: string; pageCount: number }> {
+  const isCompressed = Boolean(options?.compressed);
   const pages: AttendanceRecord[][] = [];
   for (let i = 0; i < attendees.length; i += 6) {
     pages.push(attendees.slice(i, i + 6));
@@ -517,7 +680,7 @@ export async function generateCollagePdfBlob(
   const isPortrait = settings.orientation === 'portrait';
   // Aspect ratio matches canvas (portrait 1080x1350 = 4:5, landscape 1920x1080 = 16:9)
   const orientation = isPortrait ? 'portrait' : 'landscape';
-  // Standard high-definition PDF page dimension in mm
+  // Standard PDF page dimension in mm
   const pdfWidth = isPortrait ? 210 : 297;
   const pdfHeight = isPortrait ? Math.round(210 * (1350 / 1080)) : Math.round(297 * (1080 / 1920));
 
@@ -529,10 +692,15 @@ export async function generateCollagePdfBlob(
   });
 
   const offscreenCanvas = document.createElement('canvas');
+  const scaledCanvas = isCompressed ? document.createElement('canvas') : null;
 
   for (let p = 0; p < totalPages; p++) {
     if (onProgress) {
-      onProgress(p + 1, totalPages, `Merender halaman ${p + 1} dari ${totalPages}...`);
+      onProgress(
+        p + 1,
+        totalPages,
+        `${isCompressed ? 'Mengompres' : 'Merender'} halaman ${p + 1} dari ${totalPages}...`
+      );
     }
 
     if (p > 0) {
@@ -549,16 +717,44 @@ export async function generateCollagePdfBlob(
       settings
     );
 
-    // High quality JPEG compression for optimal PDF size and razor-sharp clarity
-    const imgData = offscreenCanvas.toDataURL('image/jpeg', 0.95);
-    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+    let imgData: string;
+    if (isCompressed && scaledCanvas) {
+      // Skala resolusi 65% + kompresi JPEG 0.62 menghasilkan ukuran file ~75-85% lebih kecil namun tetap tajam dibaca
+      const scaleFactor = 0.65;
+      scaledCanvas.width = Math.round(offscreenCanvas.width * scaleFactor);
+      scaledCanvas.height = Math.round(offscreenCanvas.height * scaleFactor);
+      const sCtx = scaledCanvas.getContext('2d');
+      if (sCtx) {
+        sCtx.imageSmoothingEnabled = true;
+        sCtx.imageSmoothingQuality = 'high';
+        sCtx.drawImage(offscreenCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+      }
+      imgData = scaledCanvas.toDataURL('image/jpeg', 0.62);
+    } else {
+      // High quality JPEG compression for razor-sharp print clarity
+      imgData = offscreenCanvas.toDataURL('image/jpeg', 0.92);
+    }
+
+    pdf.addImage(
+      imgData,
+      'JPEG',
+      0,
+      0,
+      pdfWidth,
+      pdfHeight,
+      undefined,
+      isCompressed ? 'MEDIUM' : 'FAST'
+    );
   }
 
   if (onProgress) {
     onProgress(totalPages, totalPages, 'Menyusun dokumen PDF multi-halaman...');
   }
 
-  const filename = generatePdfFileName(settings.selectedSession, settings.selectedDate, totalPages);
+  const baseFilename = generatePdfFileName(settings.selectedSession, settings.selectedDate, totalPages);
+  const filename = isCompressed
+    ? baseFilename.replace(/\.pdf$/i, '_Kompres.pdf')
+    : baseFilename;
   const blob = pdf.output('blob');
 
   return { blob, filename, pageCount: totalPages };
@@ -570,16 +766,22 @@ export async function generateCollagePdfBlob(
 export async function downloadAllPagesAsPdf(
   attendees: AttendanceRecord[],
   settings: CollageSettings,
-  onProgress?: (current: number, total: number, phase: string) => void
-): Promise<{ filename: string; pageCount: number }> {
-  const { blob, filename, pageCount } = await generateCollagePdfBlob(attendees, settings, onProgress);
+  onProgress?: (current: number, total: number, phase: string) => void,
+  options?: PdfExportOptions
+): Promise<{ filename: string; pageCount: number; sizeBytes: number }> {
+  const { blob, filename, pageCount } = await generateCollagePdfBlob(
+    attendees,
+    settings,
+    onProgress,
+    options
+  );
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  return { filename, pageCount };
+  return { filename, pageCount, sizeBytes: blob.size };
 }
 
 /**

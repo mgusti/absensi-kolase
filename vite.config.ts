@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { defineConfig, Plugin } from 'vite';
 
@@ -23,12 +24,107 @@ function isHeicBuffer(buf: Buffer): boolean {
   return HEIC_BRANDS.has(brand);
 }
 
+const SETTINGS_FILE_PATH = path.resolve(import.meta.dirname, 'app-settings.json');
+
+const DEFAULT_DISK_SETTINGS = {
+  institutionName: 'RSUD H. ABDUL MANAP KOTA JAMBI',
+  unitName: 'SUBBAG UMUM, HUMAS, DAN REKAM MEDIS',
+  footerNote: 'RSUD H. ABDUL MANAP KOTA JAMBI',
+  template: 'beige',
+  frameColorA: 'classic_beige',
+  frameColorB: 'navy_gold',
+  orientation: 'portrait',
+  duplicatePolicy: 'overwrite',
+  formUrl: '',
+  spreadsheetId: ''
+};
+
+function readDiskSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE_PATH)) {
+      const raw = fs.readFileSync(SETTINGS_FILE_PATH, 'utf-8');
+      return { ...DEFAULT_DISK_SETTINGS, ...JSON.parse(raw) };
+    }
+  } catch (err) {
+    console.warn('Gagal membaca app-settings.json:', err);
+  }
+  return { ...DEFAULT_DISK_SETTINGS };
+}
+
+function writeDiskSettings(partial: Record<string, any>) {
+  const current = readDiskSettings();
+  const updated = {
+    ...current,
+    ...partial
+  };
+  fs.writeFileSync(SETTINGS_FILE_PATH, JSON.stringify(updated, null, 2) + '\n', 'utf-8');
+  return updated;
+}
+
 /**
- * Middleware proxy di server Vite (Node.js) untuk mengambil foto Google Drive
- * (termasuk .heic/.heif) secara langsung tanpa terblokir CORS / ORB oleh browser.
+ * Middleware di server Vite (Node.js) untuk:
+ * 1. Menyimpan & membaca pengaturan identitas instansi secara permanen ke file `app-settings.json` di disk (/api/settings)
+ * 2. Mengambil foto Google Drive (termasuk .heic/.heif) secara langsung tanpa terblokir CORS (/api/drive-image)
  */
-function googleDriveImageProxyPlugin(): Plugin {
-  const configureProxy = (middlewares: any) => {
+function localBackendPlugin(): Plugin {
+  const configureMiddlewares = (middlewares: any) => {
+    // Endpoint penyimpanan pengaturan permanen ke file disk (app-settings.json)
+    middlewares.use('/api/settings', (req: any, res: any) => {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (req.method === 'GET') {
+        const data = readDiskSettings();
+        res.statusCode = 200;
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      if (req.method === 'POST' || req.method === 'PUT') {
+        let body = '';
+        req.on('data', (chunk: any) => {
+          body += chunk.toString();
+        });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const allowedStringKeys = [
+              'institutionName',
+              'unitName',
+              'footerNote',
+              'template',
+              'frameColorA',
+              'frameColorB',
+              'orientation',
+              'duplicatePolicy',
+              'formUrl',
+              'spreadsheetId'
+            ];
+            const sanitized: Record<string, any> = {};
+            for (const key of allowedStringKeys) {
+              if (typeof parsed[key] === 'string') {
+                sanitized[key] = parsed[key];
+              }
+            }
+            if (typeof parsed.darkMode === 'boolean') {
+              sanitized.darkMode = parsed.darkMode;
+            }
+            const saved = writeDiskSettings(sanitized);
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, settings: saved }));
+          } catch (err: any) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: err?.message || 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+
+      res.statusCode = 405;
+      res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
+    });
+
+    // Endpoint proxy gambar Google Drive
     middlewares.use('/api/drive-image', async (req: any, res: any) => {
       try {
         const reqUrl = new URL(req.url || '', 'http://localhost');
@@ -74,8 +170,6 @@ function googleDriveImageProxyPlugin(): Plugin {
                 const buffer = Buffer.from(arrayBuffer);
                 if (buffer.length > 100) {
                   if (isHeicBuffer(buffer) || contentType.includes('heic') || contentType.includes('heif')) {
-                    // Simpan buffer HEIC mentah sebagai cadangan jika endpoint thumbnail belum siap,
-                    // lalu lanjut cek URL kandidat lain siapa tahu ada yang sudah terkonversi ke JPEG
                     if (!fallbackHeicBuffer) {
                       fallbackHeicBuffer = buffer;
                     }
@@ -99,8 +193,6 @@ function googleDriveImageProxyPlugin(): Plugin {
           }
         }
 
-        // Jika file adalah .HEIC mentah dari Google Drive, kirim dengan Content-Type image/heic
-        // agar otomatis dikonversi ke JPEG oleh heicConverter di sisi browser
         if (fallbackHeicBuffer) {
           res.setHeader('Content-Type', 'image/heic');
           res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -120,12 +212,12 @@ function googleDriveImageProxyPlugin(): Plugin {
   };
 
   return {
-    name: 'google-drive-image-proxy',
+    name: 'local-backend-plugin',
     configureServer(server) {
-      configureProxy(server.middlewares);
+      configureMiddlewares(server.middlewares);
     },
     configurePreviewServer(server) {
-      configureProxy(server.middlewares);
+      configureMiddlewares(server.middlewares);
     }
   };
 }
@@ -135,7 +227,7 @@ export default defineConfig(() => {
     define: {
       __SERVER_BOOT_ID__: JSON.stringify(Date.now().toString()),
     },
-    plugins: [react(), tailwindcss(), googleDriveImageProxyPlugin()],
+    plugins: [react(), tailwindcss(), localBackendPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
@@ -145,8 +237,13 @@ export default defineConfig(() => {
       // HMR is disabled in AI Studio via AI Studio env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Abaikan perubahan app-settings.json dari file watcher agar halaman tidak reload saat menyimpan pengaturan
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : {
+              ignored: ['**/app-settings.json']
+            },
     },
   };
 });

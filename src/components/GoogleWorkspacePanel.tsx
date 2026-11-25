@@ -14,7 +14,7 @@ import {
   FileText,
   Sparkles
 } from 'lucide-react';
-import { fetchLiveGoogleSheetRows } from '../services/firebase.ts';
+import { fetchLiveGoogleSheetRows } from '../services/googleWorkspace.ts';
 import { AttendanceRecord, CollageSettings } from '../types/attendance.ts';
 import {
   getDriveDirectImageUrl,
@@ -196,7 +196,7 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
       )}
 
       {/* Quick Integration Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Card 1: Google Form Hub */}
         <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50 flex flex-col justify-between">
           <div>
@@ -269,29 +269,6 @@ export const GoogleWorkspacePanel: React.FC<GoogleWorkspacePanelProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSheet ? 'animate-spin' : ''}`} />
               <span>{isFetchingSheet ? 'Menarik data...' : 'Tarik Data Sheets'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Card 3: Instant Multi-Page PDF Download */}
-        <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-stone-900">3. Ekspor 1 File PDF</span>
-              <FileText className="w-4 h-4 text-red-600" />
-            </div>
-            <p className="text-[11px] text-stone-600 leading-snug">
-              Unduh seluruh halaman kolase (maks. 6 foto per halaman) menjadi <strong>1 dokumen PDF utuh</strong> siap cetak atau kirim.
-            </p>
-          </div>
-          <div className="mt-3">
-            <button
-              onClick={handleDownloadPdf}
-              disabled={isDownloadingPdf}
-              className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>{isDownloadingPdf ? 'Membuat PDF...' : 'Unduh 1 File PDF Kolase'}</span>
             </button>
           </div>
         </div>

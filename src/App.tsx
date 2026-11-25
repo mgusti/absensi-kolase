@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AttendanceRecord, CollageSettings } from './types/attendance.ts';
-import { SAMPLE_ATTENDEES } from './utils/collageLogic.ts';
+import { SAMPLE_ATTENDEES, filterAttendees } from './utils/collageLogic.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { CollageStudio } from './components/CollageStudio.tsx';
 import { AttendanceForm } from './components/AttendanceForm.tsx';
@@ -16,29 +16,32 @@ import { GoogleFormShareModal } from './components/GoogleFormShareModal.tsx';
 import { SyncSheetModal } from './components/SyncSheetModal.tsx';
 import { GoogleWorkspacePanel } from './components/GoogleWorkspacePanel.tsx';
 import { downloadAllPagesAsPdf } from './utils/collageRenderer.ts';
-import { filterAttendees } from './utils/collageLogic.ts';
-import {
-  saveAttendanceToFirestore,
-  subscribeAttendance,
-  deleteAttendanceFromFirestore,
-  clearAllAttendanceFromFirestore
-} from './services/firebase.ts';
 
 const STORAGE_KEY_ATTENDEES = 'absensi_kolase_attendees_v4';
 const STORAGE_KEY_SETTINGS = 'absensi_kolase_settings_v4';
 const STORAGE_KEY_FORM_URL = 'absensi_kolase_form_url_v4';
 const STORAGE_KEY_SHEET_ID = 'absensi_kolase_sheet_id_v4';
+const STORAGE_KEY_DARK_MODE = 'absensi_kolase_dark_mode_v4';
 const STORAGE_KEY_BOOT_ID = 'absensi_kolase_server_boot_id';
 
 declare const __SERVER_BOOT_ID__: string;
+
+const DEFAULT_INSTITUTION_NAME = 'RSUD H. ABDUL MANAP KOTA JAMBI';
+const DEFAULT_UNIT_NAME = 'SUBBAG UMUM, HUMAS, DAN REKAM MEDIS';
+const DEFAULT_FOOTER_NOTE = 'RSUD H. ABDUL MANAP KOTA JAMBI';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'studio' | 'form' | 'table' | 'script'>('studio');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem(STORAGE_KEY_DARK_MODE) === 'true';
+  });
+  const [permanentSaveStatus, setPermanentSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('saved');
+  const isInitialDiskLoadDone = useRef(false);
 
-  // Tautan Google Form & Spreadsheet milik user baru (tersimpan di localStorage)
+  // Tautan Google Form & Spreadsheet
   const [formUrl, setFormUrl] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEY_FORM_URL) || '';
   });
@@ -73,46 +76,167 @@ export default function App() {
 
   // Collage settings
   const [settings, setSettings] = useState<CollageSettings>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.unitName?.includes('PERJANJIAN KERJA')) {
-          parsed.unitName = 'REKAPITULASI DOKUMENTASI KEHADIRAN';
-        }
-        if (parsed.institutionName?.includes('P3K')) {
-          parsed.institutionName = 'DOKUMENTASI ABSENSI KEHADIRAN';
-        }
-        if (parsed.footerNote?.includes('P3K')) {
-          parsed.footerNote = 'Dokumentasi Resmi Kehadiran';
-        }
-        return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return {
+    const defaultSettings: CollageSettings = {
       template: 'beige',
+      frameColorA: 'classic_beige',
+      frameColorB: 'navy_gold',
       orientation: 'portrait',
-      institutionName: 'DOKUMENTASI ABSENSI KEHADIRAN',
-      unitName: 'REKAPITULASI DOKUMENTASI KEHADIRAN',
+      institutionName: DEFAULT_INSTITUTION_NAME,
+      unitName: DEFAULT_UNIT_NAME,
       logoType: 'garuda',
-      footerNote: 'Dokumentasi Resmi Kehadiran',
+      footerNote: DEFAULT_FOOTER_NOTE,
       showTimestamp: true,
       duplicatePolicy: 'overwrite',
       selectedDate: new Date().toISOString().slice(0, 10),
       selectedSession: 'Pagi'
     };
+
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          institutionName: parsed.institutionName || DEFAULT_INSTITUTION_NAME,
+          unitName: parsed.unitName ?? DEFAULT_UNIT_NAME,
+          footerNote: parsed.footerNote || DEFAULT_FOOTER_NOTE
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return defaultSettings;
   });
 
-  // Save to localStorage
+  // Muat pengaturan permanen dari file `app-settings.json` di disk saat aplikasi dibuka
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((diskData) => {
+        if (!isMounted || !diskData) {
+          isInitialDiskLoadDone.current = true;
+          return;
+        }
+        setSettings((prev) => ({
+          ...prev,
+          institutionName:
+            typeof diskData.institutionName === 'string'
+              ? diskData.institutionName
+              : prev.institutionName,
+          unitName:
+            typeof diskData.unitName === 'string'
+              ? diskData.unitName
+              : prev.unitName,
+          footerNote:
+            typeof diskData.footerNote === 'string'
+              ? diskData.footerNote
+              : prev.footerNote,
+          template: diskData.template || prev.template,
+          frameColorA: diskData.frameColorA || prev.frameColorA || 'classic_beige',
+          frameColorB: diskData.frameColorB || prev.frameColorB || 'navy_gold',
+          orientation: diskData.orientation || prev.orientation,
+          duplicatePolicy: diskData.duplicatePolicy || prev.duplicatePolicy
+        }));
+        if (typeof diskData.formUrl === 'string' && diskData.formUrl) {
+          setFormUrl((prev) => prev || diskData.formUrl);
+        }
+        if (typeof diskData.spreadsheetId === 'string' && diskData.spreadsheetId) {
+          setSpreadsheetId((prev) => prev || diskData.spreadsheetId);
+        }
+        if (typeof diskData.darkMode === 'boolean') {
+          setDarkMode(diskData.darkMode);
+        }
+        isInitialDiskLoadDone.current = true;
+        setPermanentSaveStatus('saved');
+      })
+      .catch(() => {
+        isInitialDiskLoadDone.current = true;
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Fungsi simpan langsung ke file permanen `app-settings.json` di disk
+  const savePermanentSettingsToDisk = async (
+    customSettings = settings,
+    customFormUrl = formUrl,
+    customSheetId = spreadsheetId,
+    customDarkMode = darkMode
+  ): Promise<boolean> => {
+    setPermanentSaveStatus('saving');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          institutionName: customSettings.institutionName,
+          unitName: customSettings.unitName,
+          footerNote: customSettings.footerNote,
+          template: customSettings.template,
+          frameColorA: customSettings.frameColorA || 'classic_beige',
+          frameColorB: customSettings.frameColorB || 'navy_gold',
+          orientation: customSettings.orientation,
+          duplicatePolicy: customSettings.duplicatePolicy,
+          formUrl: customFormUrl,
+          spreadsheetId: customSheetId,
+          darkMode: customDarkMode
+        })
+      });
+      if (res.ok) {
+        setPermanentSaveStatus('saved');
+        return true;
+      }
+      setPermanentSaveStatus('error');
+      return false;
+    } catch {
+      setPermanentSaveStatus('error');
+      return false;
+    }
+  };
+
+  // Sinkronkan class dark-theme pada elemen <html>
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_DARK_MODE, String(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark-theme');
+    } else {
+      document.documentElement.classList.remove('dark-theme');
+    }
+  }, [darkMode]);
+
+  // Simpan otomatis ke file `app-settings.json` di disk setiap kali 3 input instansi atau pengaturan berubah
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+    if (!isInitialDiskLoadDone.current) return;
+
+    setPermanentSaveStatus('saving');
+    const timer = setTimeout(() => {
+      savePermanentSettingsToDisk(settings, formUrl, spreadsheetId, darkMode);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    settings.institutionName,
+    settings.unitName,
+    settings.footerNote,
+    settings.template,
+    settings.frameColorA,
+    settings.frameColorB,
+    settings.orientation,
+    settings.duplicatePolicy,
+    formUrl,
+    spreadsheetId,
+    darkMode
+  ]);
+
+  // Save attendees & links to localStorage as well
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_ATTENDEES, JSON.stringify(attendees));
   }, [attendees]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  }, [settings]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FORM_URL, formUrl);
@@ -122,31 +246,12 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_SHEET_ID, spreadsheetId);
   }, [spreadsheetId]);
 
-  // Optional Firestore real-time listener
-  useEffect(() => {
-    const unsub = subscribeAttendance((remoteRecords) => {
-      if (remoteRecords.length > 0) {
-        setAttendees((prev) => {
-          // Merge unique records
-          const existingIds = new Set(prev.map((r) => r.id));
-          const newOnes = remoteRecords.filter((r) => !existingIds.has(r.id));
-          return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
-        });
-      }
-    });
-    return () => unsub();
-  }, []);
-
   const updateSettings = (partial: Partial<CollageSettings>) => {
     setSettings((prev) => ({ ...prev, ...partial }));
   };
 
   const handleAddAttendance = (updatedList: AttendanceRecord[]) => {
     setAttendees(updatedList);
-    // Sync the top record to Firestore
-    if (updatedList.length > 0) {
-      saveAttendanceToFirestore(updatedList[0]);
-    }
   };
 
   const handleImportRecords = (newRecords: AttendanceRecord[]) => {
@@ -171,7 +276,6 @@ export default function App() {
 
     // Ganti data Rekap Sheets secara penuh dengan hasil tarikan terbaru dari Google Sheet agar selalu 100% konsisten
     setAttendees(processed);
-    processed.forEach((r) => saveAttendanceToFirestore(r));
 
     // Sesuaikan otomatis filter Tanggal & Sesi di Studio Kolase dengan data yang baru ditarik
     if (processed.length > 0) {
@@ -192,12 +296,10 @@ export default function App() {
 
   const handleDeleteAttendee = (id: string) => {
     setAttendees((prev) => prev.filter((a) => a.id !== id));
-    deleteAttendanceFromFirestore(id);
   };
 
   const handleClearAll = () => {
     if (window.confirm('Yakin ingin mengosongkan semua data presensi?')) {
-      clearAllAttendanceFromFirestore(attendees);
       setAttendees([]);
     }
   };
@@ -218,20 +320,23 @@ export default function App() {
       await downloadAllPagesAsPdf(active, settings);
     } catch (err) {
       console.error('Quick download PDF error:', err);
-      // Fallback to active tab
       setActiveTab('studio');
     }
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans">
+    <div
+      className={`min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans transition-colors ${
+        darkMode ? 'dark-theme' : ''
+      }`}
+    >
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onQuickDownload={handleQuickDownload}
-        onOpenShareModal={() => setIsShareModalOpen(true)}
         totalAttendeesCount={attendees.length}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((prev) => !prev)}
       />
 
       {/* Main View Router */}
@@ -258,6 +363,8 @@ export default function App() {
             settings={settings}
             onUpdateSettings={updateSettings}
             onQuickAddDemo={handleResetDemo}
+            permanentSaveStatus={permanentSaveStatus}
+            onSavePermanent={() => savePermanentSettingsToDisk(settings, formUrl, spreadsheetId)}
           />
         )}
 

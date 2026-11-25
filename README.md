@@ -19,14 +19,17 @@ Buka **`http://localhost:3000`** di browser Anda.
 > **Reset Otomatis Saat `npm run dev`:**
 > Setiap kali Anda menjalankan ulang perintah `npm run dev`, aplikasi akan **otomatis mengosongkan semua data di tombol `Rekap Sheets (0)`**. Dengan demikian, setiap kali Anda menekan tombol **Tarik Data Sheets**, data yang tampil dijamin **100% konsisten** dengan isi Google Sheet terbaru dan tidak tercampur data sesi/akun sebelumnya.
 >
+> **Penyimpanan Permanen Identitas Instansi (`app-settings.json`):**
+> Ketiga input **Identitas Instansi / Organisasi** (*Nama Instansi*, *Sub-Unit Kerja*, dan *Catatan / Slogan Footer*) otomatis disimpan secara permanen ke file [`app-settings.json`](./app-settings.json) di dalam folder proyek (bukan hanya di cache browser), sehingga tidak akan hilang meskipun cache browser dihapus atau dibuka di browser lain.
+>
 > **Aturan Duplikat Default (`TIMPA`):**
 > Jika peserta dengan NIP yang sama mengisi formulir lebih dari sekali pada tanggal dan sesi yang sama, sistem otomatis **menimpa (overwrite)** data lama dengan kiriman terbaru.
 
 ---
 
-## 2. Cara Pakai & Ganti Akun Google (Mode Fleksibel — Tanpa Perlu Login Firebase)
+## 2. Cara Pakai & Ganti Akun Google (Mode Direct Link — Tanpa Firebase)
 
-Agar aplikasi **fleksibel dan bebas ribet saat berganti-ganti email Google**, gunakan **Mode Direct Link** tanpa perlu login Firebase sama sekali:
+Aplikasi ini berjalan mandiri **tanpa Firebase**:
 
 ### Langkah 1: Siapkan Google Form & Google Sheet di Email Baru
 1. Login ke **Google Forms** ([forms.google.com](https://forms.google.com)) menggunakan akun Google mana saja yang ingin dipakai.

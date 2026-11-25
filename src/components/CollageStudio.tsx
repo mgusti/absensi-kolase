@@ -26,6 +26,8 @@ import {
   CollageOrientation,
   CollageSettings,
   CollageTemplate,
+  FrameColorA,
+  FrameColorB,
   LogoPreset
 } from '../types/attendance.ts';
 import {
@@ -48,20 +50,23 @@ interface CollageStudioProps {
   settings: CollageSettings;
   onUpdateSettings: (newSettings: Partial<CollageSettings>) => void;
   onQuickAddDemo: () => void;
+  permanentSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  onSavePermanent?: () => Promise<boolean>;
 }
 
 export const CollageStudio: React.FC<CollageStudioProps> = ({
   attendees,
   settings,
   onUpdateSettings,
-  onQuickAddDemo
+  onQuickAddDemo,
+  permanentSaveStatus = 'saved',
+  onSavePermanent
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isRendering, setIsRendering] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [downloadingPdfMode, setDownloadingPdfMode] = useState<'hd' | 'compressed' | null>(null);
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -125,31 +130,47 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024 * 1024) {
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
   /**
-   * Primary output: 1 single multi-page PDF document.
-   * If there are 2 images (pages), it produces a 2-page PDF document.
+   * Primary output: 1 single multi-page PDF document (HD or Compressed small size).
    */
-  const handleDownloadAllPdf = async () => {
-    setIsDownloadingPdf(true);
-    setPdfProgress(`Menyiapkan 1 file PDF (${totalPages} halaman)...`);
+  const handleDownloadAllPdf = async (compressed = false) => {
+    const mode = compressed ? 'compressed' : 'hd';
+    setDownloadingPdfMode(mode);
+    setPdfProgress(
+      compressed
+        ? `Mengompres PDF (${totalPages} halaman)...`
+        : `Menyiapkan PDF HD (${totalPages} halaman)...`
+    );
     try {
       const res = await downloadAllPagesAsPdf(
         activeAttendees,
         settings,
         (_current, _total, phase) => {
           setPdfProgress(phase);
-        }
+        },
+        { compressed }
       );
-      showToast(`✅ Berhasil! 1 File PDF (${res.pageCount} halaman) berhasil diunduh.`);
+      const sizeLabel = formatFileSize(res.sizeBytes);
+      showToast(
+        compressed
+          ? `✅ PDF Kompres (${res.pageCount} halaman · ${sizeLabel}) berhasil diunduh!`
+          : `✅ PDF Kualitas HD (${res.pageCount} halaman · ${sizeLabel}) berhasil diunduh!`
+      );
     } catch (err: any) {
       console.error('PDF export error:', err);
       showToast('Gagal membuat dokumen PDF: ' + (err.message || ''));
     } finally {
-      setIsDownloadingPdf(false);
+      setDownloadingPdfMode(null);
       setPdfProgress(null);
     }
   };
-
 
   const handleDownloadAllZip = async () => {
     setIsDownloadingZip(true);
@@ -162,29 +183,6 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
     } finally {
       setIsDownloadingZip(false);
     }
-  };
-
-  const handleCopyClipboard = async () => {
-    if (!canvasRef.current) return;
-    const success = await copyCanvasToClipboard(canvasRef.current);
-    if (success) {
-      setIsCopied(true);
-      showToast('Gambar kolase berhasil disalin ke clipboard! Siap ditempel di dokumen / chat.');
-      setTimeout(() => setIsCopied(false), 2500);
-    } else {
-      showToast('Browser belum mengizinkan penyalinan gambar langsung.');
-    }
-  };
-
-  const handleWhatsAppShare = () => {
-    const text = encodeURIComponent(
-      `*DOKUMENTASI ABSENSI ${settings.selectedSession.toUpperCase()}*\n` +
-      `Tanggal: ${formatIndonesianDate(settings.selectedDate)}\n` +
-      `Total Kehadiran: ${activeAttendees.length} Peserta\n` +
-      `Instansi: ${settings.institutionName}\n\n` +
-      `Kolase foto presensi telah dibuat otomatis.`
-    );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };
 
   return (
@@ -213,58 +211,55 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
           </p>
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions: Unduh PDF Standar (HD) & Unduh PDF Kompres (Ukuran Kecil) */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Primary High-Visibility Action: 1 File PDF Multi-Page */}
+          {/* Option 1: Standard HD PDF */}
           <button
-            onClick={handleDownloadAllPdf}
-            disabled={isDownloadingPdf}
+            onClick={() => handleDownloadAllPdf(false)}
+            disabled={downloadingPdfMode !== null}
             className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-sm transition-all disabled:opacity-50"
-            title={`Unduh 1 file PDF lengkap berisi ${totalPages} halaman kolase`}
+            title={`Unduh 1 file PDF resolusi penuh berisi ${totalPages} halaman kolase`}
           >
-            {isDownloadingPdf ? (
+            {downloadingPdfMode === 'hd' ? (
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
             ) : (
               <FileText className="w-4 h-4 shrink-0" />
             )}
             <div className="text-left">
               <span className="block leading-tight">
-                {isDownloadingPdf ? (pdfProgress || 'Membuat PDF...') : `Unduh 1 File PDF (${totalPages} Hal.)`}
+                {downloadingPdfMode === 'hd'
+                  ? pdfProgress || 'Membuat PDF...'
+                  : `Unduh 1 File PDF (${totalPages} Hal.)`}
               </span>
               <span className="text-[10px] font-normal opacity-90 block">
-                {totalPages === 1 ? '1 Gambar = 1 Hal. PDF' : `${totalPages} Gambar = ${totalPages} Halaman PDF`}
+                Kualitas Standar / Cetak HD
               </span>
             </div>
           </button>
 
-
+          {/* Option 2: Compressed Small-Size PDF */}
           <button
-            onClick={handleCopyClipboard}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-lg transition-colors"
+            onClick={() => handleDownloadAllPdf(true)}
+            disabled={downloadingPdfMode !== null}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-all disabled:opacity-50"
+            title={`Unduh 1 file PDF ukuran kecil (terkompresi) berisi ${totalPages} halaman kolase`}
           >
-            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{isCopied ? 'Tersalin!' : 'Salin'}</span>
+            {downloadingPdfMode === 'compressed' ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <FileArchive className="w-4 h-4 shrink-0" />
+            )}
+            <div className="text-left">
+              <span className="block leading-tight">
+                {downloadingPdfMode === 'compressed'
+                  ? pdfProgress || 'Mengompres PDF...'
+                  : `Unduh PDF Kompres (${totalPages} Hal.)`}
+              </span>
+              <span className="text-[10px] font-normal opacity-90 block">
+                Ukuran Kecil (~80% Lebih Ringan)
+              </span>
+            </div>
           </button>
-
-          <button
-            onClick={handleWhatsAppShare}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>WA</span>
-          </button>
-
-          {totalPages > 1 && (
-            <button
-              onClick={handleDownloadAllZip}
-              disabled={isDownloadingZip}
-              className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg transition-colors disabled:opacity-50"
-              title="Unduh semua gambar terpisah dalam ZIP"
-            >
-              <FileArchive className="w-3.5 h-3.5" />
-              <span>ZIP</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -422,56 +417,208 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
           {/* 1. Template Bingkai Selection */}
           <div>
             <label className="block text-xs font-bold text-stone-700 mb-2">
-              Pilihan Desain Bingkai
+              Pilihan Desain Bingkai & Warna
             </label>
-            <div className="grid grid-cols-1 gap-2">
-              {/* Template A: Elegan Beige */}
-              <button
-                type="button"
+            <div className="grid grid-cols-1 gap-2.5">
+              {/* Template A: Elegan Beige & Pilihan Warna */}
+              <div
                 onClick={() => onUpdateSettings({ template: 'beige' })}
-                className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                   settings.template === 'beige'
-                    ? 'border-amber-600 bg-amber-50/60 ring-2 ring-amber-600/30'
+                    ? 'border-amber-600 bg-amber-50/50 ring-2 ring-amber-600/30'
                     : 'border-stone-200 hover:border-stone-300 bg-white'
                 }`}
               >
-                <div className="w-8 h-8 rounded-lg bg-[#F8F5EE] border border-[#D9CEB8] shrink-0 flex items-center justify-center">
-                  <span className="text-amber-800 text-xs font-serif font-bold">A</span>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-stone-900">Elegan Beige (Referensi)</span>
-                    {settings.template === 'beige' && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#F8F5EE] border border-[#D9CEB8] shrink-0 flex items-center justify-center">
+                    <span className="text-amber-800 text-xs font-serif font-bold">A</span>
                   </div>
-                  <p className="text-[11px] text-stone-500 mt-0.5 leading-snug">
-                    Latar krem hangat, border tipis, tipografi klasik modern. Cocok untuk dokumentasi formal.
-                  </p>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-900">Elegan Beige (Referensi)</span>
+                      {settings.template === 'beige' && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-0.5 leading-snug">
+                      Bingkai klasik hangat, border ganda tipis, tipografi serif elegan.
+                    </p>
+                  </div>
                 </div>
-              </button>
 
-              {/* Template B: Formal Instansi */}
-              <button
-                type="button"
+                {/* Pilihan Warna Bingkai A */}
+                <div
+                  className="mt-2.5 pt-2 border-t border-stone-200/70"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[10px] font-semibold text-stone-500 block mb-1.5">
+                    Pilihan Warna Bingkai A:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        {
+                          id: 'classic_beige',
+                          label: 'Krem Klasik (Default)',
+                          bg: '#F8F5EE',
+                          accent: '#B8860B',
+                          border: '#D9CEB8'
+                        },
+                        {
+                          id: 'sage_emerald',
+                          label: 'Hijau Sage',
+                          bg: '#E0EDE4',
+                          accent: '#0F766E',
+                          border: '#7FA98F'
+                        },
+                        {
+                          id: 'rose_terracotta',
+                          label: 'Rose Terakota',
+                          bg: '#F9E5E1',
+                          accent: '#BE123C',
+                          border: '#C98A7E'
+                        },
+                        {
+                          id: 'sky_azure',
+                          label: 'Biru Langit',
+                          bg: '#E1EEF9',
+                          accent: '#0369A1',
+                          border: '#7BAAD8'
+                        },
+                        {
+                          id: 'lavender_plum',
+                          label: 'Ungu Lavender',
+                          bg: '#ECE4F5',
+                          accent: '#7E22CE',
+                          border: '#9F82C7'
+                        }
+                      ] as { id: FrameColorA; label: string; bg: string; accent: string; border: string }[]
+                    ).map((opt) => {
+                      const isActive =
+                        settings.template === 'beige' &&
+                        (settings.frameColorA || 'classic_beige') === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() =>
+                            onUpdateSettings({ template: 'beige', frameColorA: opt.id })
+                          }
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
+                            isActive
+                              ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
+                              : 'bg-white text-stone-700 border-stone-200 hover:border-stone-400'
+                          }`}
+                        >
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 border"
+                            style={{
+                              background: `linear-gradient(135deg, ${opt.bg} 55%, ${opt.accent} 55%)`,
+                              borderColor: opt.border
+                            }}
+                          />
+                          <span>{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Template B: Formal Instansi & Pilihan Warna */}
+              <div
                 onClick={() => onUpdateSettings({ template: 'formal' })}
-                className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                   settings.template === 'formal'
-                    ? 'border-blue-800 bg-blue-50/60 ring-2 ring-blue-800/30'
+                    ? 'border-blue-800 bg-blue-50/50 ring-2 ring-blue-800/30'
                     : 'border-stone-200 hover:border-stone-300 bg-white'
                 }`}
               >
-                <div className="w-8 h-8 rounded-lg bg-[#0B1D3A] text-white shrink-0 flex items-center justify-center font-bold text-xs">
-                  B
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-stone-900">Formal Instansi</span>
-                    {settings.template === 'formal' && <Check className="w-3.5 h-3.5 text-blue-800" />}
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#0B1D3A] text-white shrink-0 flex items-center justify-center font-bold text-xs">
+                    B
                   </div>
-                  <p className="text-[11px] text-stone-500 mt-0.5 leading-snug">
-                    Header biru tua, border tegas, aksen emas. Tampilan arsip kantor & dinas pemerintah.
-                  </p>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-900">Formal Instansi</span>
+                      {settings.template === 'formal' && <Check className="w-3.5 h-3.5 text-blue-800" />}
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-0.5 leading-snug">
+                      Header solid tegas, garis aksen kontras. Tampilan arsip kantor & instansi resmi.
+                    </p>
+                  </div>
                 </div>
-              </button>
+
+                {/* Pilihan Warna Bingkai B */}
+                <div
+                  className="mt-2.5 pt-2 border-t border-stone-200/70"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[10px] font-semibold text-stone-500 block mb-1.5">
+                    Pilihan Warna Bingkai B:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        {
+                          id: 'navy_gold',
+                          label: 'Biru Tua & Emas (Default)',
+                          bg: '#0B1D3A',
+                          accent: '#D4AF37'
+                        },
+                        {
+                          id: 'emerald_gold',
+                          label: 'Hijau Zamrud & Emas',
+                          bg: '#064E3B',
+                          accent: '#F59E0B'
+                        },
+                        {
+                          id: 'maroon_gold',
+                          label: 'Merah Marun & Emas',
+                          bg: '#6B0F1A',
+                          accent: '#FBBF24'
+                        },
+                        {
+                          id: 'charcoal_cyan',
+                          label: 'Hitam Arang & Sian',
+                          bg: '#18181B',
+                          accent: '#06B6D4'
+                        },
+                        {
+                          id: 'royal_purple',
+                          label: 'Ungu Royal & Perak',
+                          bg: '#2E1065',
+                          accent: '#C084FC'
+                        }
+                      ] as { id: FrameColorB; label: string; bg: string; accent: string }[]
+                    ).map((opt) => {
+                      const isActive =
+                        settings.template === 'formal' &&
+                        (settings.frameColorB || 'navy_gold') === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() =>
+                            onUpdateSettings({ template: 'formal', frameColorB: opt.id })
+                          }
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
+                            isActive
+                              ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
+                              : 'bg-white text-stone-700 border-stone-200 hover:border-stone-400'
+                          }`}
+                        >
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 border border-stone-300"
+                            style={{
+                              background: `linear-gradient(135deg, ${opt.bg} 60%, ${opt.accent} 60%)`
+                            }}
+                          />
+                          <span>{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
 
               {/* Template C: Minimalis Modern */}
               <button
@@ -534,16 +681,35 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
 
           {/* 3. Identitas Instansi & Header */}
           <div className="space-y-3 border-t border-stone-100 pt-3">
-            <label className="block text-xs font-bold text-stone-700">
-              Identitas Instansi / Organisasi
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="block text-xs font-bold text-stone-700">
+                Identitas Instansi / Organisasi
+              </label>
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  permanentSaveStatus === 'saving'
+                    ? 'bg-amber-100 text-amber-800'
+                    : permanentSaveStatus === 'error'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+                title="Tersimpan permanen di file app-settings.json (tidak hilang meski cache browser dihapus)"
+              >
+                <HardDrive className="w-3 h-3" />
+                {permanentSaveStatus === 'saving'
+                  ? 'Menyimpan...'
+                  : permanentSaveStatus === 'error'
+                  ? 'Lokal'
+                  : 'Tersimpan Permanen'}
+              </span>
+            </div>
             <div>
               <span className="text-[11px] text-stone-500 mb-1 block">Nama Instansi</span>
               <input
                 type="text"
                 value={settings.institutionName}
                 onChange={(e) => onUpdateSettings({ institutionName: e.target.value })}
-                placeholder="Contoh: DINAS KOMUNIKASI DAN INFORMATIKA"
+                placeholder="Contoh: RSUD H. ABDUL MANAP KOTA JAMBI"
                 className="w-full px-3 py-1.5 rounded-lg border border-stone-300 text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
@@ -553,7 +719,7 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
                 type="text"
                 value={settings.unitName}
                 onChange={(e) => onUpdateSettings({ unitName: e.target.value })}
-                placeholder="Contoh: BIDANG TATA USAHA"
+                placeholder="Contoh: SUBBAG UMUM, HUMAS, DAN REKAM MEDIS"
                 className="w-full px-3 py-1.5 rounded-lg border border-stone-300 text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
@@ -563,10 +729,27 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
                 type="text"
                 value={settings.footerNote}
                 onChange={(e) => onUpdateSettings({ footerNote: e.target.value })}
-                placeholder="Contoh: Dokumentasi Kehadiran Resmi Pegawai"
+                placeholder="Contoh: RSUD H. ABDUL MANAP KOTA JAMBI"
                 className="w-full px-3 py-1.5 rounded-lg border border-stone-300 text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
+            {onSavePermanent && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await onSavePermanent();
+                  if (ok) {
+                    showToast('✅ 3 Input Identitas Instansi berhasil disimpan permanen ke file app-settings.json!');
+                  } else {
+                    showToast('Gagal menyimpan ke file disk.');
+                  }
+                }}
+                className="w-full py-1.5 px-3 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Simpan Permanen Identitas Instansi</span>
+              </button>
+            )}
           </div>
 
           {/* 4. Kebijakan Duplikasi NIP */}
@@ -583,18 +766,6 @@ export const CollageStudio: React.FC<CollageStudioProps> = ({
               <option value="reject">Tolak Duplikasi (Hanya absensi pertama yang sah)</option>
               <option value="flag">Simpan & Tandai Duplikat (Untuk verifikasi admin)</option>
             </select>
-          </div>
-
-          {/* Quick Demo Button */}
-          <div className="border-t border-stone-100 pt-3">
-            <button
-              type="button"
-              onClick={onQuickAddDemo}
-              className="w-full py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 hover:bg-stone-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>Muat Ulang 14 Peserta Demo (3 Halaman: 6+6+2)</span>
-            </button>
           </div>
         </div>
       </div>

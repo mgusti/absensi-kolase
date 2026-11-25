@@ -4,27 +4,27 @@
  */
 
 import React from 'react';
-import { Camera, Image as ImageIcon, FileSpreadsheet, Code2, Download, FileText } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileSpreadsheet, Code2, Moon, Sun } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'studio' | 'form' | 'table' | 'script';
   setActiveTab: (tab: 'studio' | 'form' | 'table' | 'script') => void;
-  onQuickDownload: () => void;
-  onOpenShareModal: () => void;
   totalAttendeesCount: number;
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
-  onQuickDownload,
-  onOpenShareModal,
-  totalAttendeesCount
+  totalAttendeesCount,
+  darkMode,
+  onToggleDarkMode
 }) => {
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-8 px-4 sm:px-6 py-3.5">
-        {/* Zone 1: Single text element Brand Zone */}
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 transition-colors">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-6 px-4 sm:px-6 py-3.5">
+        {/* Zone 1: Brand Zone */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-9 h-9 rounded-lg bg-stone-900 text-amber-100 flex items-center justify-center font-bold text-base shadow-sm">
             <Camera className="w-5 h-5 text-amber-200" />
@@ -35,7 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               e.preventDefault();
               setActiveTab('studio');
             }}
-            className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 hover:text-amber-900 transition-colors"
+            className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0 hover:text-amber-600 transition-colors"
           >
             Absensi Kolase
           </a>
@@ -89,24 +89,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Zone 3: Dark Mode Toggle */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={onOpenShareModal}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors whitespace-nowrap shrink-0"
-            title="Bagikan Tautan & QR Code Google Form"
+            type="button"
+            onClick={onToggleDarkMode}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-stone-200 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-colors cursor-pointer"
+            title={darkMode ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
           >
-            <span>📱 Bagikan Form</span>
-          </button>
-
-          <button
-            onClick={onQuickDownload}
-            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition-colors whitespace-nowrap shrink-0"
-            title="Unduh 1 file PDF lengkap berisi seluruh halaman kolase"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Unduh PDF (1 File)</span>
-            <span className="sm:hidden">Unduh PDF</span>
+            {darkMode ? (
+              <>
+                <Sun className="w-4 h-4 text-amber-400" />
+                <span>Mode Terang</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-4 h-4 text-stone-700" />
+                <span>Mode Gelap</span>
+              </>
+            )}
           </button>
         </div>
       </div>
