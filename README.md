@@ -50,4 +50,46 @@ Aplikasi ini berjalan mandiri **tanpa Firebase**:
    - **1. Link Google Form:** Tempel link Google Form baru Anda (untuk dibagikan ke WhatsApp atau dicetak sebagai QR Code).
    - **2. Link Google Sheets:** Tempel link/URL atau ID Google Spreadsheet Anda, lalu klik tombol **Tarik Data Sheets**.
 2. Data peserta dan foto otomatis masuk ke **Rekap Sheets** serta **Studio Kolase**, dan tanggal/sesi otomatis menyesuaikan data terbaru dari Sheet.
-3. Klik tombol merah **Unduh PDF (1 File)** untuk mengunduh dokumen PDF kolase siap cetak/kirim.
+3. Klik tombol **Unduh 1 File PDF** (Kualitas Cetak HD) atau **Unduh PDF Kompres** (Ukuran Kecil ~80% lebih ringan) untuk mengunduh dokumen PDF kolase.
+
+---
+
+## 3. Panduan Judul Google Form Tanggal Otomatis (Berganti Setiap Jam 00:00 WIB)
+
+Melalui menu **Google Apps Script** di aplikasi, Anda dapat memasang script di Google Sheets agar **Judul Header Google Form** otomatis memperbarui tanggalnya setiap pukul **00:00 WIB (`Asia/Jakarta`)**.
+
+### Rumus Penulisan Tanggal pada Judul Google Form
+```text
+[Tanggal 1–31] [Spasi] [Nama Bulan] [Spasi] [Tahun 4 Digit]
+```
+
+### ✅ Format Judul yang BISA TERBACA (Berhasil Diganti Otomatis)
+Script otomatis mempertahankan teks judul Anda dan mengganti bagian tanggal tepat pada posisinya:
+
+| Pola Penulisan | Contoh Judul Awal di Google Form | Hasil Otomatis Besok (00:00 WIB) |
+| :--- | :--- | :--- |
+| **Tanggal di Belakang** | `Absensi MOOC 26 November 2026` | `Absensi MOOC 27 November 2026` |
+| **Tanggal di Depan** | `12 Desember 2026 Absensi Pegawai RSUD` | `27 November 2026 Absensi Pegawai RSUD` |
+| **Tanggal di Tengah** | `Absensi 26 November 2026 Unit Umum` | `Absensi 27 November 2026 Unit Umum` |
+| **Bulan Bahasa Indonesia** | `Absensi 15 Agustus 2026` | `Absensi 27 November 2026` |
+| **Bulan Bahasa Inggris** | `Absensi 12 December 2026` | `Absensi 27 November 2026` |
+| **Singkatan Bulan (3 Huruf)** | `Absensi 26 Nov 2026` / `12 Des 2026` | `Absensi 27 November 2026` |
+| **Huruf Besar / Kecil** | `Absensi 26 november 2026` / `26 NOVEMBER 2026` | `Absensi 27 November 2026` |
+| **Judul Tanpa Tanggal** | `Absensi MOOC` | `Absensi MOOC 27 November 2026` *(ditambah di belakang)* |
+
+> **Daftar Nama Bulan yang Dikenali Sistem:**
+> - **Indonesia:** `Januari`, `Februari`, `Maret`, `April`, `Mei`, `Juni`, `Juli`, `Agustus`, `September`, `Oktober`, `November`, `Desember`
+> - **Inggris:** `January`, `February`, `March`, `April`, `May`, `June`, `July`, `August`, `September`, `October`, `November`, `December`
+> - **Singkatan:** `Jan`, `Feb`, `Mar`, `Apr`, `Mei`/`May`, `Jun`, `Jul`, `Agu`/`Aug`, `Sep`/`Sept`, `Okt`/`Oct`, `Nov`, `Des`/`Dec`
+
+### ❌ Format Judul yang GAGAL TERBACA (Jangan Digunakan)
+Jika Anda menulis tanggal dengan salah satu format di bawah ini, sistem **tidak akan mengenalinya sebagai tanggal yang bisa diganti** (sehingga tanggal lama tidak terhapus, melainkan ditambah tanggal baru di bagian belakang):
+
+| Penyebab Gagal | Contoh Penulisan yang Salah | Solusi Penulisan yang Benar |
+| :--- | :--- | :--- |
+| **Bulan ditulis angka (`/` atau `-`)** | ❌ `Absensi 26/11/2026` atau `Absensi 26-11-2026` | ✅ `Absensi 26 November 2026` |
+| **Tahun hanya 2 digit** | ❌ `Absensi 26 November 26` | ✅ `Absensi 26 November 2026` |
+| **Tanpa tahun / tanpa tanggal** | ❌ `Absensi 26 November` atau `Absensi November 2026` | ✅ `Absensi 26 November 2026` |
+| **Ejaan bulan tidak baku (typo)** | ❌ `Absensi 26 Nopember 2026` / `Peberuari` | ✅ `Absensi 26 November 2026` / `Februari` |
+| **Tanpa spasi pemisah** | ❌ `Absensi 26Nov2026` | ✅ `Absensi 26 Nov 2026` |
+| **Bulan di depan tanggal (Gaya US)** | ❌ `Absensi November 26, 2026` | ✅ `Absensi 26 November 2026` |
