@@ -285,14 +285,18 @@ function pasangTriggerJudulOtomatisWIB(tanpaAlert) {
 }
 
 /**
- * Helper menampilkan pesan (aman dijalankan baik dari Editor Apps Script maupun dari Sheet)
+ * Helper menampilkan pesan tanpa memblokir eksekusi script (Non-blocking Toast + Logger)
+ * sehingga saat di-Run dari Editor Apps Script langsung "Execution completed" tanpa stuck menunggu klik OK di tab Sheet.
  */
 function tampilkanPesan(pesan) {
   Logger.log(pesan);
   try {
-    SpreadsheetApp.getUi().alert(pesan);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (ss) {
+      ss.toast(String(pesan).replace(/\\n+/g, " "), "📸 Absensi Kolase", 8);
+    }
   } catch (e) {
-    // Abaikan jika dijalankan langsung dari dalam Editor Apps Script tanpa UI Sheet
+    // Abaikan jika dijalankan oleh trigger latar belakang
   }
 }
 
